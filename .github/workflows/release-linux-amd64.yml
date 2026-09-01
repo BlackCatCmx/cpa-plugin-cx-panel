@@ -1,0 +1,85 @@
+name: Release Linux amd64
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the v prefix, for example 0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-linux-amd64-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Validate release input
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must look like 0.1.0" >&2
+            exit 1
+          fi
+          jq -e --arg version "$VERSION" \
+            '.plugins[] | select(.id == "cpa-plugin-cx-panel") | .version == $version' \
+            registry.json >/dev/null
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "release v$VERSION already exists" >&2
+            exit 1
+          fi
+
+      - name: Test browser logic
+        run: node --test web-test/*.test.mjs
+
+      - name: Test and build Linux amd64
+        run: |
+          mkdir -p dist
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -w /src \
+            golang:1.26-bookworm \
+            bash -lc 'go test ./... && go vet ./... && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildvcs=false -buildmode=c-shared -o dist/cpa-plugin-cx-panel.so .'
+          file dist/cpa-plugin-cx-panel.so
+
+      - name: Package release assets
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          archive="cpa-plugin-cx-panel_${VERSION}_linux_amd64.zip"
+          zip -j "dist/$archive" dist/cpa-plugin-cx-panel.so
+          cd dist
+          sha256sum "$archive" > checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive="cpa-plugin-cx-panel_${VERSION}_linux_amd64.zip"
+          gh release create "v$VERSION" \
+            "dist/$archive" \
+            dist/checksums.txt \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes

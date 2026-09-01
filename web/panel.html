@@ -10,6 +10,7 @@
       --bg-page:#faf9f5; --bg-card:#f0eee8; --bg-soft:#e9e6df; --bg-float:#fffdf9;
       --text:#2d2a26; --text-2:#6d6760; --text-3:#a29c95; --border:#e3e1db;
       --border-hover:#cecac4; --green:#10b981; --amber:#e0aa14; --red:#c65746;
+      --blue:#3b82f6;
       --red-bg:rgba(198,87,70,.1); --red-border:rgba(198,87,70,.35);
       --shadow:0 12px 26px -18px rgba(0,0,0,.22);
       --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
@@ -19,6 +20,7 @@
       color-scheme:dark; --bg-page:#151412; --bg-card:#1d1b18; --bg-soft:#262320; --bg-float:#2a2723;
       --text:#f6f4f1; --text-2:#c9c3bb; --text-3:#9c958d; --border:#3a3530; --border-hover:#5a544d;
       --green:#0fae78; --amber:#ffd862; --red:#cf4b3a; --red-bg:rgba(198,87,70,.18);
+      --blue:#60a5fa;
       --red-border:rgba(198,87,70,.45); --shadow:0 14px 30px -18px rgba(0,0,0,.65);
     }
     * { box-sizing:border-box; }
@@ -66,8 +68,8 @@
     .tab.active { background:var(--bg-float); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.08); }
     .poll-state { color:var(--text-3); font:10.5px var(--mono); }
     .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; align-items:start; }
-    .account-card { display:flex; flex-direction:column; gap:12px; min-width:0; padding:16px; border:1px solid var(--border); border-radius:14px; background:color-mix(in srgb,var(--bg-card) 82%,transparent); box-shadow:var(--shadow); transition:180ms ease; }
-    .account-card:hover { transform:translateY(-2px); border-color:var(--border-hover); }
+    .account-card { display:flex; flex-direction:column; gap:12px; min-width:0; padding:16px; border:1px solid color-mix(in srgb,var(--text-2) 18%,var(--border)); border-radius:14px; background:color-mix(in srgb,var(--bg-card) 82%,transparent); box-shadow:var(--shadow); transition:180ms ease; }
+    .account-card:hover { transform:translateY(-2px); border-color:color-mix(in srgb,var(--text-2) 34%,var(--border)); }
     .account-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
     .identity { display:flex; align-items:center; gap:10px; min-width:0; }
     .plan { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; height:24px; padding:2px 9px; border:1px solid var(--border); border-radius:999px; background:var(--bg-soft); color:var(--text-2); box-shadow:0 1px 2px rgba(0,0,0,.06); font-size:10.5px; font-weight:750; line-height:1; letter-spacing:.025em; }
@@ -78,13 +80,23 @@
     :root[data-theme="dark"] .plan.pro { background:linear-gradient(135deg,#4f3d0b,#8f6d10); color:#fff0a8; }
     :root[data-theme="dark"] .plan.team { background:linear-gradient(135deg,#281f46,#483580); color:#ddd6fe; }
     .account-name { min-width:0; overflow:hidden; color:var(--text); font-size:12px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+    .account-meta { display:flex; flex-wrap:wrap; gap:6px 16px; padding:7px 10px; border:1px solid var(--border); border-radius:10px; background:color-mix(in srgb,var(--bg-page) 38%,transparent); }
+    .account-meta-item { display:inline-flex; align-items:baseline; gap:5px; min-width:0; }
+    .account-meta-label { color:var(--text-3); font-size:11.5px; font-weight:550; }
+    .account-meta-value { color:var(--text-2); font:700 11.5px var(--mono); }
+    .account-meta-relative { color:var(--text-3); font-size:10.5px; font-weight:600; white-space:nowrap; }
+    .account-meta-relative::before { content:"·"; margin-right:5px; color:var(--text-3); }
+    .expiry-valid .account-meta-value,.expiry-valid .account-meta-relative { color:color-mix(in srgb,var(--green) 82%,var(--text)); }
+    .expiry-soon .account-meta-value,.expiry-soon .account-meta-relative { color:color-mix(in srgb,var(--amber) 88%,var(--text)); }
+    .expiry-expired .account-meta-value,.expiry-expired .account-meta-relative { color:var(--red); }
+    .account-meta-failed .account-meta-value { color:var(--red); }
     .head-actions { display:flex; align-items:center; gap:7px; flex:0 0 auto; }
     .status { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border:1px solid color-mix(in srgb,var(--green) 30%,transparent); border-radius:999px; color:color-mix(in srgb,var(--green) 76%,var(--text)); background:color-mix(in srgb,var(--green) 8%,transparent); font-size:10px; font-weight:700; }
     .status::before { content:""; width:5px; height:5px; border-radius:50%; background:currentColor; }
     .status.error { color:var(--red); border-color:var(--red-border); background:var(--red-bg); }
     .status.waiting { color:var(--text-3); border-color:var(--border); background:color-mix(in srgb,var(--bg-soft) 62%,transparent); }
-    .refresh { display:inline-grid; place-items:center; width:28px; height:28px; padding:0; border:1px solid var(--border); border-radius:999px; background:color-mix(in srgb,var(--bg-card) 72%,transparent); color:var(--text-2); cursor:pointer; }
-    .refresh:hover { border-color:var(--border-hover); background:var(--bg-soft); color:var(--text); }
+    .refresh { display:inline-grid; place-items:center; width:28px; height:28px; padding:0; border:1px solid color-mix(in srgb,var(--blue) 42%,var(--border)); border-radius:999px; background:color-mix(in srgb,var(--blue) 9%,var(--bg-card)); color:color-mix(in srgb,var(--blue) 78%,var(--text)); cursor:pointer; }
+    .refresh:hover { border-color:color-mix(in srgb,var(--blue) 65%,var(--border)); background:color-mix(in srgb,var(--blue) 16%,var(--bg-card)); color:var(--blue); }
     .refresh:disabled { cursor:wait; opacity:.55; }
     .refresh.loading svg { animation:spin .8s linear infinite; }
     .account-error { display:flex; align-items:center; gap:7px; padding:6px 9px; border:1px solid var(--red-border); border-radius:9px; background:var(--red-bg); color:var(--red); font:11px/1.35 var(--mono); white-space:pre-wrap; word-break:break-word; }
@@ -96,10 +108,16 @@
     .quota-reset { color:var(--text-3); font-size:10.5px; font-weight:500; }
     .track { height:6px; overflow:hidden; border-radius:999px; background:color-mix(in srgb,var(--text) 8%,transparent); }
     .fill { height:100%; border-radius:inherit; background:var(--green); transition:width 420ms cubic-bezier(.23,1,.32,1); }
-    .fill.low { background:var(--amber); }
-    .fill.empty { background:var(--red); }
+    .fill.medium { background:var(--amber); }
+    .fill.low { background:var(--red); }
     .account-empty { display:grid; place-items:center; min-height:116px; padding:18px; border:1px dashed var(--border); border-radius:10px; color:var(--text-3); text-align:center; }
     .empty { grid-column:1/-1; padding:70px 20px; color:var(--text-3); text-align:center; border:1px dashed var(--border); border-radius:14px; }
+    .pagination { display:flex; align-items:center; justify-content:center; gap:10px; margin-top:18px; }
+    .pagination[hidden] { display:none; }
+    .pagination-button { min-height:32px; padding:5px 12px; border:1px solid color-mix(in srgb,var(--text-2) 20%,var(--border)); border-radius:9px; background:color-mix(in srgb,var(--bg-card) 78%,transparent); color:var(--text-2); cursor:pointer; font-size:11.5px; font-weight:650; }
+    .pagination-button:hover:not(:disabled) { border-color:var(--border-hover); background:var(--bg-soft); color:var(--text); }
+    .pagination-button:disabled { cursor:not-allowed; opacity:.42; }
+    .pagination-status { min-width:150px; color:var(--text-3); text-align:center; font:10.5px var(--mono); }
     @keyframes spin { to { transform:rotate(360deg); } }
     @media (max-width:1100px) { .grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
     @media (max-width:880px) { .settings{grid-template-columns:1fr}.settings-actions{justify-content:flex-end} }
@@ -117,7 +135,7 @@
       <div class="summary-item"><div class="summary-label">Codex 凭证</div><div class="summary-value"><span id="count-all">—</span><span class="summary-note">个账号</span></div></div>
       <div class="summary-item"><div class="summary-label">已有额度</div><div class="summary-value"><span id="count-quota">—</span><span class="summary-note">个账号</span></div></div>
       <div class="summary-item"><div class="summary-label">当前异常</div><div class="summary-value summary-error"><span id="count-error">—</span><span class="summary-note">需在凭证页处理</span></div></div>
-      <div class="summary-item"><div class="summary-label">自动更新</div><div class="summary-value">10s</div></div>
+      <div class="summary-item"><div class="summary-label">自动更新</div><div class="summary-value">30s</div></div>
     </section>
     <div id="banner" class="banner" role="alert"></div>
     <details id="settings-details" class="settings-shell">
@@ -140,6 +158,7 @@
         <div id="poll-state" class="poll-state">正在更新</div>
       </div>
       <section id="account-grid" class="grid" aria-live="polite"><div class="empty">正在读取账号……</div></section>
+      <nav id="pagination" class="pagination" aria-label="账号分页" hidden></nav>
     </section>
   </main>
   <script type="module" src="./panel-app.mjs"></script>

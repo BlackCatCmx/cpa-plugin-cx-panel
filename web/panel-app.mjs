@@ -1,12 +1,20 @@
 import {
+  accountPage,
   accountPlan,
   accountStatus,
+  accountSubscriptionActiveUntil,
   accountTitle,
   buildRefreshRequest,
+  buildResetCreditsRequest,
+  dateTimeTone,
+  formatRelativeDateTime,
   formatReset,
+  formatUTC8DateTime,
   parseActiveQuota,
   parsePassiveQuota,
+  parseResetCreditsAvailableCount,
   planInfo,
+  quotaTone,
   resolveRefreshUserAgent,
   safeUpstreamError,
   selectCodexAccounts,
@@ -16,13 +24,14 @@ import {
 const SESSION_KEY = 'cli-proxy-auth';
 const SESSION_PREFIX = 'enc::v1::';
 const ACTIVE_QUOTA_KEY = 'cpa-cx-panel-active-quota-v1';
-const POLL_INTERVAL = 10_000;
+const POLL_INTERVAL = 30_000;
 const state = {
   accounts: [],
   activeQuota: new Map(),
   activeErrors: new Map(),
   refreshing: new Set(),
   filter: 'all',
+  page: 1,
   polling: false,
   session: null,
   pluginConfig: {},
@@ -33,6 +42,7 @@ const state = {
 const elements = {
   banner: document.querySelector('#banner'),
   grid: document.querySelector('#account-grid'),
+  pagination: document.querySelector('#pagination'),
   tabs: document.querySelector('#tabs'),
   all: document.querySelector('#count-all'),
   quota: document.querySelector('#count-quota'),
@@ -187,7 +197,7 @@ function renderWindow(windowData) {
   top.append(value);
   const track = createElement('div', 'track');
   const remaining = windowData.remaining ?? 0;
-  const fill = createElement('div', `fill${remaining <= 0 ? ' empty' : remaining <= 25 ? ' low' : ''}`);
+  const fill = createElement('div', `fill ${quotaTone(remaining)}`);
   fill.style.width = `${Math.max(0, Math.min(100, remaining))}%`;
   track.append(fill);
   row.append(top, track);
@@ -227,6 +237,28 @@ function renderCard(account) {
 
   head.append(actions);
   card.append(head);
+
+  const subscriptionActiveUntil = accountSubscriptionActiveUntil(account);
+  const subscriptionUntil = formatUTC8DateTime(subscriptionActiveUntil) || '未知';
+  const subscriptionRelative = formatRelativeDateTime(subscriptionActiveUntil);
+  const subscriptionTone = dateTimeTone(subscriptionActiveUntil);
+  const resetCreditsCount = quota.resetCreditsAvailableCount ?? null;
+  const meta = createElement('div', 'account-meta');
+  const subscriptionItem = createElement('span', `account-meta-item${subscriptionTone ? ` expiry-${subscriptionTone}` : ''}`);
+  subscriptionItem.append(createElement('span', 'account-meta-label', '套餐到期'), createElement('span', 'account-meta-value', subscriptionUntil));
+  if (subscriptionRelative) subscriptionItem.append(createElement('span', 'account-meta-relative', subscriptionRelative));
+  meta.append(subscriptionItem);
+  if (resetCreditsCount !== null) {
+    const item = createElement('span', 'account-meta-item');
+    item.append(createElement('span', 'account-meta-label', '主动重置次数'), createElement('span', 'account-meta-value', String(resetCreditsCount)));
+    meta.append(item);
+  } else if (quota.resetCreditsError) {
+    const item = createElement('span', 'account-meta-item account-meta-failed');
+    item.title = quota.resetCreditsError;
+    item.append(createElement('span', 'account-meta-label', '主动重置次数'), createElement('span', 'account-meta-value', '获取失败'));
+    meta.append(item);
+  }
+  card.append(meta);
   if (status.message) card.append(createElement('div', 'account-error', status.message));
   const list = createElement('div', 'quota-list');
   if (quota.windows.length) quota.windows.forEach((windowData) => list.append(renderWindow(windowData)));
@@ -248,13 +280,29 @@ function render() {
   elements.tabNormal.textContent = String(normalCount);
   elements.tabError.textContent = String(errorCount);
   elements.tabWaiting.textContent = String(waitingCount);
-  const visible = state.accounts.filter((account) => state.filter === 'all' || effectiveStatus(account).kind === state.filter);
+  const filtered = state.accounts.filter((account) => state.filter === 'all' || effectiveStatus(account).kind === state.filter);
+  const paged = accountPage(filtered, state.page);
+  state.page = paged.page;
   elements.grid.replaceChildren();
-  if (!visible.length) {
+  elements.pagination.replaceChildren();
+  elements.pagination.hidden = paged.totalPages <= 1;
+  if (!filtered.length) {
     elements.grid.append(createElement('div', 'empty', state.accounts.length ? '该分类下没有账号' : '没有 Codex 账号'));
     return;
   }
-  visible.forEach((account) => elements.grid.append(renderCard(account)));
+  paged.items.forEach((account) => elements.grid.append(renderCard(account)));
+  if (paged.totalPages > 1) {
+    const previous = createElement('button', 'pagination-button', '上一页');
+    previous.type = 'button';
+    previous.disabled = paged.page === 1;
+    previous.addEventListener('click', () => { state.page -= 1; render(); });
+    const status = createElement('span', 'pagination-status', `第 ${paged.page} / ${paged.totalPages} 页 · 共 ${filtered.length} 个账号`);
+    const next = createElement('button', 'pagination-button', '下一页');
+    next.type = 'button';
+    next.disabled = paged.page === paged.totalPages;
+    next.addEventListener('click', () => { state.page += 1; render(); });
+    elements.pagination.append(previous, status, next);
+  }
 }
 
 async function pollAccounts({ initial = false } = {}) {
@@ -299,6 +347,24 @@ async function refreshAccount(account) {
     catch { throw new Error('上游额度响应不是有效 JSON'); }
     const quota = parseActiveQuota(payload);
     if (!quota.windows.length) throw new Error('上游响应中没有可用额度窗口');
+    try {
+      const resetResponse = await managementFetch('/api-call', {
+        method: 'POST',
+        body: JSON.stringify(buildResetCreditsRequest(account, state.userAgent)),
+      });
+      const resetStatus = Number(resetResponse?.status_code);
+      if (!Number.isInteger(resetStatus) || resetStatus < 200 || resetStatus >= 300) {
+        throw new Error(safeUpstreamError(resetResponse));
+      }
+      let resetPayload;
+      try { resetPayload = typeof resetResponse.body === 'string' ? JSON.parse(resetResponse.body) : resetResponse.body; }
+      catch { throw new Error('主动重置次数响应不是有效 JSON'); }
+      const count = parseResetCreditsAvailableCount(resetPayload);
+      if (count === null) throw new Error('主动重置次数响应格式无效');
+      quota.resetCreditsAvailableCount = count;
+    } catch (error) {
+      if (quota.resetCreditsAvailableCount === null) quota.resetCreditsError = error.message;
+    }
     state.activeQuota.set(key, { passiveObservedAt: account?.quota?.observed_at ?? null, quota });
     saveActiveQuota();
   } catch (error) {
@@ -339,6 +405,7 @@ elements.tabs.addEventListener('click', (event) => {
   const button = event.target.closest('[data-filter]');
   if (!button) return;
   state.filter = button.dataset.filter;
+  state.page = 1;
   elements.tabs.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab === button));
   render();
 });

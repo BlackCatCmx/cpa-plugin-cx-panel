@@ -21,6 +21,20 @@ export function selectCodexAccounts(payload) {
   });
 }
 
+export function accountPage(accounts, requestedPage) {
+  const pageSize = 30;
+  const totalPages = Math.max(1, Math.ceil(accounts.length / pageSize));
+  const page = Math.min(Math.max(1, Math.trunc(requestedPage) || 1), totalPages);
+  const start = (page - 1) * pageSize;
+  return { items: accounts.slice(start, start + pageSize), page, totalPages };
+}
+
+export function quotaTone(remaining) {
+  if (remaining >= 70) return 'high';
+  if (remaining >= 30) return 'medium';
+  return 'low';
+}
+
 export function accountTitle(account) {
   return firstText(account?.label, account?.email, account?.name) || 'Codex 账号';
 }
@@ -41,6 +55,14 @@ export function accountPlan(account) {
   return normalizedSignals(account?.quota?.signals).get('x-codex-plan-type') ?? '';
 }
 
+export function accountSubscriptionActiveUntil(account) {
+  return first(
+    account?.id_token,
+    'chatgpt_subscription_active_until',
+    'chatgptSubscriptionActiveUntil',
+  );
+}
+
 export function accountStatus(account) {
   const message = String(account?.status_message ?? '').trim();
   const status = String(account?.status ?? '').trim().toLowerCase();
@@ -48,7 +70,7 @@ export function accountStatus(account) {
   const unhealthyMessage = healthyMessage ? '' : message;
   if (account?.disabled) return { kind: 'waiting', label: '已停用', message: unhealthyMessage };
   if (account?.unavailable || status === 'error' || status === 'unavailable') {
-    return { kind: 'error', label: '不可用', message: unhealthyMessage || '凭证不可用，CPA 未提供状态说明' };
+    return { kind: 'error', label: '异常', message: unhealthyMessage || 'CPA 未提供异常说明' };
   }
   if (message && !healthyMessage) {
     return { kind: 'error', label: '异常', message };
@@ -180,7 +202,28 @@ export function parseActiveQuota(payload) {
       appendActiveWindows(windows, first(item, 'rate_limit', 'rateLimit') ?? item, `additional-${index}`, name);
     });
   }
-  return { planType: first(payload, 'plan_type', 'planType') ?? '', observedAt: new Date().toISOString(), windows };
+  return {
+    planType: first(payload, 'plan_type', 'planType') ?? '',
+    observedAt: new Date().toISOString(),
+    resetCreditsAvailableCount: parseResetCreditsAvailableCount(
+      first(payload, 'rate_limit_reset_credits', 'rateLimitResetCredits'),
+    ),
+    windows,
+  };
+}
+
+export function parseResetCreditsAvailableCount(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const raw = first(payload, 'available_count', 'availableCount');
+  const count = Number(raw);
+  if (raw !== null && raw !== '' && Number.isFinite(count) && count >= 0) return count;
+  if (!Array.isArray(payload.credits)) return null;
+  return payload.credits.filter((credit) => {
+    if (!credit || typeof credit !== 'object') return false;
+    const type = firstText(credit.reset_type, credit.resetType);
+    const status = firstText(credit.status);
+    return type === 'codex_rate_limits' && status === 'available';
+  }).length;
 }
 
 export function resolveRefreshUserAgent(pluginConfig, cpaConfig) {
@@ -215,6 +258,20 @@ export function buildRefreshRequest(account, userAgent) {
   };
 }
 
+export function buildResetCreditsRequest(account, userAgent) {
+  const request = buildRefreshRequest(account, userAgent);
+  return {
+    ...request,
+    url: 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits',
+    header: {
+      ...request.header,
+      Accept: 'application/json',
+      'OpenAI-Beta': 'codex-1',
+      Originator: 'Codex Desktop',
+    },
+  };
+}
+
 export function safeUpstreamError(response) {
   const status = Number(response?.status_code);
   let body = response?.body;
@@ -232,4 +289,59 @@ export function formatReset(value) {
   return new Intl.DateTimeFormat('zh-CN', {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date(value));
+}
+
+function dateLikeTimestamp(value) {
+  const raw = typeof value === 'string' ? value.trim() : value;
+  if (raw === '' || raw === null || raw === undefined || typeof raw === 'boolean') return null;
+  const numeric = Number(raw);
+  const instant = Number.isFinite(numeric)
+    ? numeric > 0 ? new Date(numeric < 1e11 ? numeric * 1000 : numeric) : null
+    : new Date(raw);
+  return instant && Number.isFinite(instant.getTime()) ? instant.getTime() : null;
+}
+
+export function formatUTC8DateTime(value) {
+  const timestamp = dateLikeTimestamp(value);
+  if (timestamp === null) return '';
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(timestamp).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+const relativeDateTimeFormatter = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'always' });
+
+export function formatRelativeDateTime(value, now = Date.now()) {
+  const timestamp = dateLikeTimestamp(value);
+  if (timestamp === null) return '';
+  const delta = timestamp - now;
+  const sign = delta < 0 ? -1 : 1;
+  const absolute = Math.abs(delta);
+  const day = 24 * 60 * 60 * 1000;
+  const hour = 60 * 60 * 1000;
+  const minute = 60 * 1000;
+  let unit;
+  let amount;
+  if (absolute >= day) {
+    unit = 'day';
+    amount = Math.floor(absolute / day);
+  } else if (absolute >= hour) {
+    unit = 'hour';
+    amount = Math.floor(absolute / hour);
+  } else {
+    unit = 'minute';
+    amount = Math.max(1, Math.floor(absolute / minute));
+  }
+  return relativeDateTimeFormatter.format(sign * amount, unit);
+}
+
+export function dateTimeTone(value, now = Date.now()) {
+  const timestamp = dateLikeTimestamp(value);
+  if (timestamp === null) return '';
+  const remaining = timestamp - now;
+  if (remaining <= 0) return 'expired';
+  return remaining <= 24 * 60 * 60 * 1000 ? 'soon' : 'valid';
 }

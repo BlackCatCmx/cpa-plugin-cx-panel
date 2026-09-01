@@ -1,70 +1,43 @@
 # CPA CX Panel
 
-CLIProxyAPI 原生 Codex 额度面板。页面读取 CPA 已有的被动额度快照，并允许按账号手动查询一次当前额度。
+CPA CX Panel 是 CLIProxyAPI 的原生 Codex 额度面板插件，直接集成到 CPA 原生管理前端。
 
-## 功能边界
+插件按账号展示：
 
-- 页面加载及每 10 秒自动更新只读取 `GET /v0/management/auth-files`，不会请求 ChatGPT。
-- 只有点击账号右上角的刷新图标，才会由 CPA 代发一次 `GET /backend-api/wham/usage`。
-- 展示主额度、Code Review 和动态附加额度窗口，以及 CPA 返回的账号错误状态。
-- 不提供凭证启停、编辑、下载、删除、模型查询或 OAuth 凭证刷新。
-- 主动刷新结果保存在浏览器本地存储，并在 CPA 产生新的被动额度快照后自动失效；UA 设置保存在 CPA 配置的插件专属命名空间。
+- Codex 主额度、Code Review 额度和动态附加额度窗口；
+- 套餐到期时间、相对时间和主动重置次数；
+- CPA 记录的账号状态及错误信息；
+- 单账号主动刷新得到的最新额度。
 
-## 要求
+账号列表支持分页。页面定期读取 CPA 已有的额度快照，只有用户点击账号刷新按钮时才会查询一次上游额度。插件不负责凭证启停、编辑、删除或 OAuth 刷新。
 
-- 支持原生插件 ABI v1、插件资源页面、`auth-files`、`api-call` 和插件配置接口的 CLIProxyAPI 版本。
-- Go 1.26、CGO 和目标平台 C 编译器仅用于构建。
-- Node.js 仅用于运行浏览器逻辑测试，CPA 运行时不需要 Node.js。
-- 插件页与原生管理前端同源，并且登录时选择记住管理密钥。
+## 安装要求
 
-## 测试与构建
+- 支持原生插件 ABI v1 和插件商店的 CLIProxyAPI 版本；
+- CPA 原生管理前端与插件页面同源；
+- 当前发布包支持 Linux amd64；
+- CPA 的配置文件和插件目录可写并已持久化。
 
-```bash
-go test ./...
-node --test web-test/*.test.mjs
-mkdir -p build
-go build -buildvcs=false -buildmode=c-shared -o build/cpa-plugin-cx-panel.dll .
-```
+## 从 CPA 插件商店安装
 
-Linux 构建时把输出名改为 `build/cpa-plugin-cx-panel.so`。安装了 `make` 的环境也可使用 `make test` 和 `make build`。
-
-构建产物位于 `build/`：Windows amd64 为 `cpa-plugin-cx-panel.dll`，Linux 为 `cpa-plugin-cx-panel.so`。Go 同时生成的 `.h` 文件不需要部署。
-
-动态库必须在对应操作系统和 CPU 架构上构建。Windows DLL 只用于本地测试；Zeabur 和 Docker 中的 Linux CPA 必须使用匹配架构、匹配 libc 环境的 Linux `.so`。当前仓库暂未加入 GitHub Actions 发布工作流。
-
-## CPA 配置
+在 CPA 的 `config.yaml` 中启用插件，并追加本项目的商店源：
 
 ```yaml
 plugins:
   enabled: true
-  dir: /data/plugins
   store-sources:
     - https://raw.githubusercontent.com/BlackCatCmx/cpa-plugin-cx-panel/main/registry.json
-  configs:
-    cpa-plugin-cx-panel:
-      enabled: true
-      refresh_user_agent: ""
 ```
 
-`refresh_user_agent` 为空时，先继承 CPA 的 `codex-header-defaults.user-agent`，再回退到插件内置的 CPA Codex 默认 UA。页面通过 CPA 插件配置接口保存该字段，因此会随现有 `config.yaml` 持久化，不创建插件私有配置文件。
+如果已有 `plugins` 配置，请合并字段，不要重复创建配置块。`store-sources` 只会追加本项目商店，不会替换 CPA 官方商店。
 
-## 手工安装
+保存配置并重启 CPA，然后：
 
-将匹配平台的动态库放入 CPA 插件目录：
+1. 打开 CPA 原生管理前端的插件商店；
+2. 刷新商店列表并找到 **CPA CX Panel**；
+3. 点击安装；
+4. 从管理菜单打开 **Codex 额度**。
 
-```text
-/data/plugins/linux/amd64/cpa-plugin-cx-panel.so
-/data/plugins/linux/arm64/cpa-plugin-cx-panel.so
-plugins/windows/amd64/cpa-plugin-cx-panel.dll
-```
+安装程序会根据 CPA 的运行平台下载、校验并启用插件。升级和卸载同样通过 CPA 原生插件管理页面完成。
 
-启用上述配置并重启 CPA，随后在原生管理前端打开“Codex 额度”。Zeabur 可直接复用现有 `/data` 持久卷，在其中增加 `/data/plugins`；VPS Docker 应把宿主机插件目录挂载到配置中 `plugins.dir` 指向的容器路径。
-
-仓库公开并产生符合 CPA 命名约定的 GitHub Release 后，可使用根目录的自用 `registry.json` 从插件商店安装。该注册表不是官方商店收录项，只有显式加入 `store-sources` 的 CPA 实例才能看到。
-
-## 已知限制
-
-- CPA 重启后，被动额度内存快照需要等待下一次真实业务请求重新填充。
-- 主动刷新不会写回 CPA 的被动快照；结果保留在当前浏览器中，直至 CPA 采集到该账号的新被动额度或账号被移除。
-- 原生前端目前没有向插件 iframe 传递临时内存会话；没有记住管理密钥时插件页无法读取受保护接口。
-- CPA 更改插件 ABI、管理会话存储格式或额度接口字段后，插件需要同步适配。
+使用插件页面前，请在 CPA 管理登录页选择记住管理密钥。

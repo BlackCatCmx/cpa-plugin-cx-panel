@@ -1,5 +1,6 @@
 temp/
 .claude/
+AGENTS.md
 build/
 dist/
 *.dll

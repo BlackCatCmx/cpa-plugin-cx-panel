@@ -34,8 +34,13 @@ const elements = {
   grid: document.querySelector('#account-grid'),
   tabs: document.querySelector('#tabs'),
   all: document.querySelector('#count-all'),
-  normal: document.querySelector('#count-normal'),
-  other: document.querySelector('#count-other'),
+  quota: document.querySelector('#count-quota'),
+  error: document.querySelector('#count-error'),
+  tabAll: document.querySelector('#tab-all'),
+  tabNormal: document.querySelector('#tab-normal'),
+  tabError: document.querySelector('#tab-error'),
+  tabWaiting: document.querySelector('#tab-waiting'),
+  pollState: document.querySelector('#poll-state'),
   theme: document.querySelector('#theme-button'),
   uaInput: document.querySelector('#ua-input'),
   uaSource: document.querySelector('#ua-source'),
@@ -174,8 +179,10 @@ function renderCard(account) {
   const status = effectiveStatus(account);
   const card = createElement('article', 'account-card');
   const head = createElement('div', 'account-head');
-  head.append(createElement('span', `plan ${plan.tone}`, plan.label));
-  head.append(createElement('div', 'account-name', accountTitle(account)));
+  const identity = createElement('div', 'identity');
+  identity.append(createElement('span', `plan ${plan.tone}`, plan.label));
+  identity.append(createElement('div', 'account-name', accountTitle(account)));
+  head.append(identity);
 
   const actions = createElement('div', 'head-actions');
   actions.append(createElement('span', `status ${status.kind}`, status.label));
@@ -188,20 +195,29 @@ function renderCard(account) {
   refresh.addEventListener('click', () => refreshAccount(account));
   actions.append(refresh);
 
+  head.append(actions);
+  card.append(head);
+  if (status.message) card.append(createElement('div', 'account-error', status.message));
   const list = createElement('div', 'quota-list');
   if (quota.windows.length) quota.windows.forEach((windowData) => list.append(renderWindow(windowData)));
-  else list.append(createElement('div', 'muted', '尚未采集到额度'));
-  card.append(head, actions, list);
-  if (status.message) card.append(createElement('div', 'account-error', status.message));
+  else list.append(createElement('div', 'account-empty', '暂无额度数据'));
+  card.append(list);
   return card;
 }
 
 function render() {
   const statuses = state.accounts.map(effectiveStatus);
   const normalCount = statuses.filter((item) => item.kind === 'normal').length;
+  const errorCount = statuses.filter((item) => item.kind === 'error').length;
+  const waitingCount = statuses.filter((item) => item.kind === 'waiting').length;
+  const quotaCount = state.accounts.filter((account) => displayedQuota(account).windows.length > 0).length;
   elements.all.textContent = String(state.accounts.length);
-  elements.normal.textContent = String(normalCount);
-  elements.other.textContent = String(state.accounts.length - normalCount);
+  elements.quota.textContent = String(quotaCount);
+  elements.error.textContent = String(errorCount);
+  elements.tabAll.textContent = String(state.accounts.length);
+  elements.tabNormal.textContent = String(normalCount);
+  elements.tabError.textContent = String(errorCount);
+  elements.tabWaiting.textContent = String(waitingCount);
   const visible = state.accounts.filter((account) => state.filter === 'all' || effectiveStatus(account).kind === state.filter);
   elements.grid.replaceChildren();
   if (!visible.length) {
@@ -218,9 +234,11 @@ async function pollAccounts({ initial = false } = {}) {
     const response = await managementFetch('/auth-files');
     state.accounts = selectCodexAccounts(response);
     showBanner('');
+    elements.pollState.textContent = '刚刚更新';
     render();
   } catch (error) {
     showBanner(`读取账号失败：${error.message}`);
+    elements.pollState.textContent = '更新失败';
     if (initial) render();
   } finally {
     state.polling = false;

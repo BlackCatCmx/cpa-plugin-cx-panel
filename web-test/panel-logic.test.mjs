@@ -32,7 +32,7 @@ test('同邮箱的不同 auth_index 不会合并', () => {
 test('账号错误与健康状态按 CPA 字段判断', () => {
   assert.deepEqual(accountStatus({ quota: {}, status_message: 'healthy' }), { kind: 'waiting', label: '等待额度', message: '' });
   assert.deepEqual(accountStatus({ quota: { observed_at: '2026-09-01T00:00:00Z' }, status_message: 'ok' }), { kind: 'normal', label: '正常', message: '' });
-  assert.deepEqual(accountStatus({ unavailable: true }), { kind: 'error', label: '异常', message: '凭证不可用，CPA 未提供状态说明' });
+  assert.deepEqual(accountStatus({ unavailable: true }), { kind: 'error', label: '不可用', message: '凭证不可用，CPA 未提供状态说明' });
   assert.equal(accountStatus({ status_message: 'unauthorized' }).message, 'unauthorized');
 });
 

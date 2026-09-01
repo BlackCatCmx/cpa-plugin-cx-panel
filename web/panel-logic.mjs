@@ -48,7 +48,7 @@ export function accountStatus(account) {
   const unhealthyMessage = healthyMessage ? '' : message;
   if (account?.disabled) return { kind: 'waiting', label: '已停用', message: unhealthyMessage };
   if (account?.unavailable || status === 'error' || status === 'unavailable') {
-    return { kind: 'error', label: '异常', message: unhealthyMessage || '凭证不可用，CPA 未提供状态说明' };
+    return { kind: 'error', label: '不可用', message: unhealthyMessage || '凭证不可用，CPA 未提供状态说明' };
   }
   if (message && !healthyMessage) {
     return { kind: 'error', label: '异常', message };

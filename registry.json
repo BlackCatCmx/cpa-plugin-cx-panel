@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "cpa-plugin-cx-panel",
+      "name": "CPA CX Panel",
+      "description": "Codex quota panel with passive observation and per-account refresh.",
+      "author": "BlackCatCmx",
+      "version": "0.1.0",
+      "repository": "https://github.com/BlackCatCmx/cpa-plugin-cx-panel",
+      "tags": ["management", "codex", "quota"]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+temp/
+.claude/
+build/
+dist/
+*.dll
+*.so
+*.exe
+*.test
+coverage.out
+*.prof
+.env
+.DS_Store

@@ -59,7 +59,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/src" \
             -w /src \
             golang:1.26-bookworm \
-            bash -lc 'go test ./... && go vet ./... && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildvcs=false -buildmode=c-shared -o dist/cpa-plugin-cx-panel.so .'
+            bash -c 'go test ./... && go vet ./... && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildvcs=false -buildmode=c-shared -o dist/cpa-plugin-cx-panel.so .'
           file dist/cpa-plugin-cx-panel.so
 
       - name: Package release assets

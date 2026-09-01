@@ -15,6 +15,7 @@ import {
 
 const SESSION_KEY = 'cli-proxy-auth';
 const SESSION_PREFIX = 'enc::v1::';
+const ACTIVE_QUOTA_KEY = 'cpa-cx-panel-active-quota-v1';
 const POLL_INTERVAL = 10_000;
 const state = {
   accounts: [],
@@ -137,11 +138,38 @@ function displayedQuota(account) {
   const passive = parsePassiveQuota(account);
   const active = state.activeQuota.get(key);
   if (!active) return passive;
-  if (passive.observedAt && active.passiveObservedAt !== passive.observedAt) {
-    state.activeQuota.delete(key);
-    return passive;
-  }
   return active.quota;
+}
+
+function loadActiveQuota() {
+  const raw = localStorage.getItem(ACTIVE_QUOTA_KEY);
+  if (!raw) return;
+  const entries = JSON.parse(raw);
+  if (!Array.isArray(entries)) throw new Error('已保存额度的格式无效');
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || entry.length !== 2) continue;
+    const [key, value] = entry;
+    if (typeof key !== 'string' || !Array.isArray(value?.quota?.windows)) continue;
+    state.activeQuota.set(key, value);
+  }
+}
+
+function saveActiveQuota() {
+  localStorage.setItem(ACTIVE_QUOTA_KEY, JSON.stringify([...state.activeQuota]));
+}
+
+function reconcileActiveQuota() {
+  const accounts = new Map(state.accounts.map((account) => [String(account.auth_index), account]));
+  let changed = false;
+  for (const [key, active] of state.activeQuota) {
+    const account = accounts.get(key);
+    const passiveObservedAt = account ? parsePassiveQuota(account).observedAt : null;
+    if (!account || (passiveObservedAt && active.passiveObservedAt !== passiveObservedAt)) {
+      state.activeQuota.delete(key);
+      changed = true;
+    }
+  }
+  if (changed) saveActiveQuota();
 }
 
 function renderWindow(windowData) {
@@ -181,7 +209,9 @@ function renderCard(account) {
   const head = createElement('div', 'account-head');
   const identity = createElement('div', 'identity');
   identity.append(createElement('span', `plan ${plan.tone}`, plan.label));
-  identity.append(createElement('div', 'account-name', accountTitle(account)));
+  const name = createElement('div', 'account-name', accountTitle(account));
+  name.title = accountTitle(account);
+  identity.append(name);
   head.append(identity);
 
   const actions = createElement('div', 'head-actions');
@@ -233,6 +263,7 @@ async function pollAccounts({ initial = false } = {}) {
   try {
     const response = await managementFetch('/auth-files');
     state.accounts = selectCodexAccounts(response);
+    reconcileActiveQuota();
     showBanner('');
     elements.pollState.textContent = '刚刚更新';
     render();
@@ -269,6 +300,7 @@ async function refreshAccount(account) {
     const quota = parseActiveQuota(payload);
     if (!quota.windows.length) throw new Error('上游响应中没有可用额度窗口');
     state.activeQuota.set(key, { passiveObservedAt: account?.quota?.observed_at ?? null, quota });
+    saveActiveQuota();
   } catch (error) {
     state.activeErrors.set(key, error.message);
   } finally {
@@ -324,6 +356,7 @@ async function initialize() {
   const savedTheme = localStorage.getItem('cpa-cx-panel-theme');
   if (savedTheme === 'dark' || savedTheme === 'light') document.documentElement.dataset.theme = savedTheme;
   try {
+    loadActiveQuota();
     state.session = readSession();
     const [pluginConfig, cpaConfig] = await Promise.all([
       managementFetch(`/plugins/${pluginID}/config`),

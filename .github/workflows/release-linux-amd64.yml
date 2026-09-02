@@ -1,18 +1,28 @@
 name: Release Linux amd64
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "*.go"
+      - "web/**"
+      - "web-test/**"
+      - go.mod
+      - go.sum
+      - .github/workflows/release-linux-amd64.yml
   workflow_dispatch:
     inputs:
       version:
-        description: Release version without the v prefix, for example 0.1.0
-        required: true
+        description: Optional release version without the v prefix, for example 0.2.0. Leave blank to advance the patch version automatically.
+        required: false
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-linux-amd64-${{ inputs.version }}
+  group: release-linux-amd64-main
   cancel-in-progress: false
 
 jobs:
@@ -24,7 +34,7 @@ jobs:
       - name: Checkout selected revision
         uses: actions/checkout@v7
         with:
-          persist-credentials: false
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -32,22 +42,56 @@ jobs:
           node-version: 22
           package-manager-cache: false
 
-      - name: Validate release input
+      - name: Determine release version
+        id: version
         env:
-          VERSION: ${{ inputs.version }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ github.repository }}
+          REF: ${{ github.ref }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "version must look like 0.1.0" >&2
+          if [[ "$REF" != "refs/heads/main" ]]; then
+            echo "releases can only be created from main" >&2
             exit 1
           fi
-          jq -e --arg version "$VERSION" \
-            '.plugins[] | select(.id == "cpa-plugin-cx-panel") | .version == $version' \
-            registry.json >/dev/null
+
+          latest_version="$({
+            gh api --paginate "/repos/$REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+              | sed -nE 's/^[vV]([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' \
+              | sort -V \
+              | tail -n 1
+          } || true)"
+          registry_version="$(jq -r '.plugins[] | select(.id == "cpa-plugin-cx-panel") | .version' registry.json)"
+
+          if [[ -n "$REQUESTED_VERSION" ]]; then
+            VERSION="$REQUESTED_VERSION"
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "version must look like 0.1.0" >&2
+              exit 1
+            fi
+            if [[ -n "$latest_version" ]] && [[ "$(printf '%s\n%s\n' "$latest_version" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" || "$latest_version" == "$VERSION" ]]; then
+              echo "version $VERSION must be greater than the latest release $latest_version" >&2
+              exit 1
+            fi
+          else
+            base_version="$latest_version"
+            if [[ -z "$base_version" ]]; then
+              base_version="$registry_version"
+            fi
+            if [[ ! "$base_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "registry version must look like 0.1.0" >&2
+              exit 1
+            fi
+            IFS='.' read -r major minor patch <<< "$base_version"
+            VERSION="$major.$minor.$((patch + 1))"
+          fi
+
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             echo "release v$VERSION already exists" >&2
             exit 1
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Test browser logic
         run: node --test web-test/*.test.mjs
@@ -64,7 +108,7 @@ jobs:
 
       - name: Package release assets
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           archive="cpa-plugin-cx-panel_${VERSION}_linux_amd64.zip"
           zip -j "dist/$archive" dist/cpa-plugin-cx-panel.so
@@ -73,7 +117,7 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
           archive="cpa-plugin-cx-panel_${VERSION}_linux_amd64.zip"
@@ -83,3 +127,21 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "v$VERSION" \
             --generate-notes
+
+      - name: Update registry fallback version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          jq --arg version "$VERSION" \
+            '(.plugins[] | select(.id == "cpa-plugin-cx-panel") | .version) = $version' \
+            registry.json > registry.json.next
+          mv registry.json.next registry.json
+          git diff --check
+          if git diff --quiet -- registry.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add registry.json
+          git commit -m "chore: release v$VERSION"
+          git push origin HEAD:main

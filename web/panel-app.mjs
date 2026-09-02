@@ -192,7 +192,10 @@ function renderWindow(windowData) {
   } else {
     value.textContent = `${Math.round(windowData.remaining)}%`;
     const reset = formatReset(windowData.resetAt);
-    if (reset) value.append(createElement('span', 'quota-reset', reset));
+    if (reset) {
+      value.append(createElement('span', 'quota-reset', reset));
+      value.append(createElement('span', 'quota-reset-relative', `· ${formatRelativeDateTime(windowData.resetAt)}`));
+    }
   }
   top.append(value);
   const track = createElement('div', 'track');

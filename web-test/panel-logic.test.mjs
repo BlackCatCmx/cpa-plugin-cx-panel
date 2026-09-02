@@ -85,6 +85,7 @@ test('套餐到期相对时间按天、小时和分钟显示', () => {
   const now = Date.parse('2026-09-01T00:00:00Z');
   assert.equal(formatRelativeDateTime('2026-09-03T12:00:00Z', now), '2天后');
   assert.equal(formatRelativeDateTime('2026-09-01T05:59:00Z', now), '5小时后');
+  assert.equal(formatRelativeDateTime(now + 45 * 60 * 1000, now), '45分钟后');
   assert.equal(formatRelativeDateTime('2026-08-31T23:45:00Z', now), '15分钟前');
   assert.equal(formatRelativeDateTime(null, now), '');
 });

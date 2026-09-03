@@ -6,7 +6,7 @@
       "name": "CPA CX Panel",
       "description": "Codex quota panel with passive observation and per-account refresh.",
       "author": "BlackCatCmx",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "repository": "https://github.com/BlackCatCmx/cpa-plugin-cx-panel",
       "tags": [
         "management",

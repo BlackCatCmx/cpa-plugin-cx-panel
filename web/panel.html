@@ -91,13 +91,20 @@
     .expiry-expired .account-meta-value,.expiry-expired .account-meta-relative { color:var(--red); }
     .account-meta-failed .account-meta-value { color:var(--red); }
     .head-actions { display:flex; align-items:center; gap:7px; flex:0 0 auto; }
-    .status { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border:1px solid color-mix(in srgb,var(--green) 30%,transparent); border-radius:999px; color:color-mix(in srgb,var(--green) 76%,var(--text)); background:color-mix(in srgb,var(--green) 8%,transparent); font-size:10px; font-weight:700; }
+    .status { display:inline-flex; align-items:center; gap:5px; min-height:27px; padding:4px 9px; border:1px solid color-mix(in srgb,var(--green) 56%,var(--border)); border-radius:999px; color:color-mix(in srgb,var(--green) 82%,var(--text)); background:color-mix(in srgb,var(--green) 13%,var(--bg-card)); box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 45%,transparent),0 2px 7px color-mix(in srgb,var(--green) 15%,transparent); font-size:10px; font-weight:750; }
     .status::before { content:""; width:5px; height:5px; border-radius:50%; background:currentColor; }
-    .status.error { color:var(--red); border-color:var(--red-border); background:var(--red-bg); }
-    .status.waiting { color:var(--text-3); border-color:var(--border); background:color-mix(in srgb,var(--bg-soft) 62%,transparent); }
+    .status.error { color:var(--red); border-color:color-mix(in srgb,var(--red) 58%,var(--border)); background:color-mix(in srgb,var(--red) 13%,var(--bg-card)); box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 38%,transparent),0 2px 7px color-mix(in srgb,var(--red) 15%,transparent); }
+    .status.waiting { color:var(--text-2); border-color:color-mix(in srgb,var(--text-2) 38%,var(--border)); background:color-mix(in srgb,var(--bg-soft) 76%,transparent); box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 32%,transparent),0 2px 7px rgba(0,0,0,.07); }
+    .status.credential-disabled { color:var(--text-3); }
+    .status-toggle { cursor:pointer; transition:border-color 150ms ease,background 150ms ease,box-shadow 150ms ease,transform 150ms ease; }
+    .status-toggle:hover:not(:disabled) { border-color:currentColor; box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 46%,transparent),0 4px 11px color-mix(in srgb,currentColor 19%,transparent); transform:translateY(-1px); }
+    .status-toggle:active:not(:disabled) { box-shadow:inset 0 1px 2px rgba(0,0,0,.12); transform:translateY(0); }
+    .status-toggle:disabled { cursor:default; opacity:.72; }
+    .status-toggle.updating:disabled { cursor:wait; }
     .refresh { display:inline-grid; place-items:center; width:28px; height:28px; padding:0; border:1px solid color-mix(in srgb,var(--blue) 42%,var(--border)); border-radius:999px; background:color-mix(in srgb,var(--blue) 9%,var(--bg-card)); color:color-mix(in srgb,var(--blue) 78%,var(--text)); cursor:pointer; }
-    .refresh:hover { border-color:color-mix(in srgb,var(--blue) 65%,var(--border)); background:color-mix(in srgb,var(--blue) 16%,var(--bg-card)); color:var(--blue); }
-    .refresh:disabled { cursor:wait; opacity:.55; }
+    .refresh:hover:not(:disabled) { border-color:color-mix(in srgb,var(--blue) 65%,var(--border)); background:color-mix(in srgb,var(--blue) 16%,var(--bg-card)); color:var(--blue); }
+    .refresh:disabled { cursor:default; opacity:.45; }
+    .refresh.loading:disabled { cursor:wait; opacity:.55; }
     .refresh.loading svg { animation:spin .8s linear infinite; }
     .account-error { display:flex; align-items:center; gap:7px; padding:6px 9px; border:1px solid var(--red-border); border-radius:9px; background:var(--red-bg); color:var(--red); font:11px/1.35 var(--mono); white-space:pre-wrap; word-break:break-word; }
     .account-error::before { content:"!"; display:inline-grid; place-items:center; flex:0 0 auto; width:14px; height:14px; border:1.5px solid currentColor; border-radius:50%; font:800 9px/1 var(--sans); }

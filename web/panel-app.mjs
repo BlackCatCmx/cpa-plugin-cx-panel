@@ -4,6 +4,7 @@ import {
   accountStatus,
   accountSubscriptionActiveUntil,
   accountTitle,
+  buildStatusToggleRequest,
   buildRefreshRequest,
   buildResetCreditsRequest,
   dateTimeTone,
@@ -30,6 +31,7 @@ const state = {
   activeQuota: new Map(),
   activeErrors: new Map(),
   refreshing: new Set(),
+  statusUpdating: new Set(),
   filter: 'all',
   page: 1,
   polling: false,
@@ -228,12 +230,26 @@ function renderCard(account) {
   head.append(identity);
 
   const actions = createElement('div', 'head-actions');
-  actions.append(createElement('span', `status ${status.kind}`, status.label));
+  const statusUpdating = state.statusUpdating.has(key);
+  const canToggleStatus = account.runtime_only !== true && Boolean(String(account.name ?? '').trim());
+  const statusButton = createElement(
+    'button',
+    `status status-toggle ${status.kind}${account.disabled ? ' credential-disabled' : ''}${statusUpdating ? ' updating' : ''}`,
+    statusUpdating ? '处理中' : status.label,
+  );
+  statusButton.type = 'button';
+  statusButton.title = canToggleStatus
+    ? account.disabled ? '点击启用凭证' : '点击停用凭证'
+    : '运行时凭证不能在此切换状态';
+  statusButton.setAttribute('aria-label', statusButton.title);
+  statusButton.disabled = !canToggleStatus || statusUpdating || state.refreshing.has(key);
+  statusButton.addEventListener('click', () => toggleAccountStatus(account));
+  actions.append(statusButton);
   const refresh = createElement('button', `refresh${state.refreshing.has(key) ? ' loading' : ''}`);
   refresh.type = 'button';
   refresh.title = account.disabled ? '已停用账号不能刷新额度' : '刷新额度';
   refresh.setAttribute('aria-label', `刷新 ${accountTitle(account)} 的额度`);
-  refresh.disabled = Boolean(account.disabled) || state.refreshing.has(key);
+  refresh.disabled = Boolean(account.disabled) || state.refreshing.has(key) || statusUpdating;
   refresh.append(refreshIcon());
   refresh.addEventListener('click', () => refreshAccount(account));
   actions.append(refresh);
@@ -324,6 +340,29 @@ async function pollAccounts({ initial = false } = {}) {
     if (initial) render();
   } finally {
     state.polling = false;
+  }
+}
+
+async function toggleAccountStatus(account) {
+  const key = String(account.auth_index);
+  if (state.statusUpdating.has(key) || state.refreshing.has(key)) return;
+  state.statusUpdating.add(key);
+  showBanner('');
+  render();
+  try {
+    const request = buildStatusToggleRequest(account);
+    const response = await managementFetch('/auth-files/status', {
+      method: 'PATCH',
+      body: JSON.stringify(request),
+    });
+    state.accounts = state.accounts.map((item) =>
+      String(item.auth_index) === key ? { ...item, disabled: Boolean(response?.disabled) } : item,
+    );
+  } catch (error) {
+    showBanner(`更新凭证状态失败：${error.message}`);
+  } finally {
+    state.statusUpdating.delete(key);
+    render();
   }
 }
 

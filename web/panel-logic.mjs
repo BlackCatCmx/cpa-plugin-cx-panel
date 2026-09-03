@@ -79,6 +79,14 @@ export function accountStatus(account) {
   return { kind: 'normal', label: '正常', message: '' };
 }
 
+export function buildStatusToggleRequest(account) {
+  const name = String(account?.name ?? '').trim();
+  const authIndex = String(account?.auth_index ?? '').trim();
+  if (!name) throw new Error('账号缺少凭证文件名');
+  if (!authIndex) throw new Error('账号缺少 auth_index');
+  return { name, auth_index: authIndex, disabled: !Boolean(account?.disabled) };
+}
+
 function normalizedSignals(signals) {
   const result = new Map();
   for (const [key, value] of Object.entries(signals ?? {})) {

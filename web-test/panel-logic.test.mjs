@@ -4,6 +4,7 @@ import {
   accountPage,
   accountSubscriptionActiveUntil,
   accountStatus,
+  buildStatusToggleRequest,
   buildRefreshRequest,
   buildResetCreditsRequest,
   dateTimeTone,
@@ -35,6 +36,18 @@ test('同邮箱的不同 auth_index 不会合并', () => {
     { provider: 'codex', auth_index: '2', email: 'same@example.com' },
   ] });
   assert.deepEqual(result.map((item) => item.auth_index), ['1', '2']);
+});
+
+test('凭证状态切换同时使用文件名和 auth_index', () => {
+  assert.deepEqual(
+    buildStatusToggleRequest({ name: 'codex-user.json', auth_index: 'index-1', disabled: false }),
+    { name: 'codex-user.json', auth_index: 'index-1', disabled: true },
+  );
+  assert.deepEqual(
+    buildStatusToggleRequest({ name: 'codex-user.json', auth_index: 'index-1', disabled: true }),
+    { name: 'codex-user.json', auth_index: 'index-1', disabled: false },
+  );
+  assert.throws(() => buildStatusToggleRequest({ auth_index: 'index-1' }), /文件名/);
 });
 
 test('账号列表固定每页 30 个并校正页码', () => {

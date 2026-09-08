@@ -4,6 +4,7 @@ import {
   accountStatus,
   accountSubscriptionActiveUntil,
   accountTitle,
+  buildQuotaSnapshot,
   buildStatusToggleRequest,
   buildRefreshRequest,
   buildResetCreditsRequest,
@@ -19,6 +20,7 @@ import {
   resolveRefreshUserAgent,
   safeUpstreamError,
   selectCodexAccounts,
+  shouldInvalidateActiveQuota,
   validateUserAgent,
 } from './panel-logic.mjs';
 
@@ -175,8 +177,7 @@ function reconcileActiveQuota() {
   let changed = false;
   for (const [key, active] of state.activeQuota) {
     const account = accounts.get(key);
-    const passiveObservedAt = account ? parsePassiveQuota(account).observedAt : null;
-    if (!account || (passiveObservedAt && active.passiveObservedAt !== passiveObservedAt)) {
+    if (shouldInvalidateActiveQuota(account, active)) {
       state.activeQuota.delete(key);
       changed = true;
     }
@@ -220,7 +221,7 @@ function renderCard(account) {
   const quota = displayedQuota(account);
   const plan = planInfo(quota.planType || accountPlan(account));
   const status = effectiveStatus(account);
-  const card = createElement('article', 'account-card');
+  const card = createElement('article', `account-card${account.disabled ? ' account-disabled' : ''}`);
   const head = createElement('div', 'account-head');
   const identity = createElement('div', 'identity');
   identity.append(createElement('span', `plan ${plan.tone}`, plan.label));
@@ -257,7 +258,7 @@ function renderCard(account) {
   head.append(actions);
   card.append(head);
 
-  const subscriptionActiveUntil = accountSubscriptionActiveUntil(account);
+  const subscriptionActiveUntil = quota.subscriptionActiveUntil ?? accountSubscriptionActiveUntil(account);
   const subscriptionUntil = formatUTC8DateTime(subscriptionActiveUntil) || '未知';
   const subscriptionRelative = formatRelativeDateTime(subscriptionActiveUntil);
   const subscriptionTone = dateTimeTone(subscriptionActiveUntil);
@@ -355,8 +356,17 @@ async function toggleAccountStatus(account) {
       method: 'PATCH',
       body: JSON.stringify(request),
     });
+    const disabled = Boolean(response?.disabled);
+    if (disabled) {
+      const quota = displayedQuota(account);
+      state.activeQuota.set(key, {
+        passiveObservedAt: account?.quota?.observed_at ?? null,
+        quota: buildQuotaSnapshot(account, quota),
+      });
+      saveActiveQuota();
+    }
     state.accounts = state.accounts.map((item) =>
-      String(item.auth_index) === key ? { ...item, disabled: Boolean(response?.disabled) } : item,
+      String(item.auth_index) === key ? { ...item, disabled } : item,
     );
   } catch (error) {
     showBanner(`更新凭证状态失败：${error.message}`);

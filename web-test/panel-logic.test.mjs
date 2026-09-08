@@ -4,6 +4,7 @@ import {
   accountPage,
   accountSubscriptionActiveUntil,
   accountStatus,
+  buildQuotaSnapshot,
   buildStatusToggleRequest,
   buildRefreshRequest,
   buildResetCreditsRequest,
@@ -18,6 +19,7 @@ import {
   resolveRefreshUserAgent,
   safeUpstreamError,
   selectCodexAccounts,
+  shouldInvalidateActiveQuota,
   validateUserAgent,
 } from '../web/panel-logic.mjs';
 
@@ -94,6 +96,20 @@ test('从 CPA 解码后的 id_token 读取套餐到期时间', () => {
   assert.equal(formatUTC8DateTime('invalid'), '');
 });
 
+test('停用快照保留套餐到期、额度和主动重置次数', () => {
+  const quota = {
+    planType: 'pro',
+    resetCreditsAvailableCount: 2,
+    windows: [],
+  };
+  assert.deepEqual(buildQuotaSnapshot({
+    id_token: { chatgpt_subscription_active_until: 1788711000 },
+  }, quota), {
+    ...quota,
+    subscriptionActiveUntil: 1788711000,
+  });
+});
+
 test('套餐到期相对时间按天、小时和分钟显示', () => {
   const now = Date.parse('2026-09-01T00:00:00Z');
   assert.equal(formatRelativeDateTime('2026-09-03T12:00:00Z', now), '2天后');
@@ -131,6 +147,14 @@ test('解析被动额度和动态额度窗口', () => {
   assert.equal(quota.windows[0].remaining, 78);
   assert.match(quota.windows[1].label, /Code Review/);
   assert.match(quota.windows[2].label, /GPT Spark/);
+});
+
+test('停用账号保留主动额度直到启用后出现新被动快照', () => {
+  const active = { passiveObservedAt: '2026-09-01T00:00:00Z' };
+  const changedQuota = { observed_at: '2026-09-02T00:00:00Z', signals: {} };
+  assert.equal(shouldInvalidateActiveQuota({ disabled: true, quota: changedQuota }, active), false);
+  assert.equal(shouldInvalidateActiveQuota({ disabled: false, quota: changedQuota }, active), true);
+  assert.equal(shouldInvalidateActiveQuota(null, active), true);
 });
 
 test('解析主动额度 snake_case 响应', () => {

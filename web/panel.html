@@ -79,6 +79,9 @@
     :root[data-theme="dark"] .plan.plus { background:linear-gradient(135deg,#12352b,#176149); color:#a7f3d0; }
     :root[data-theme="dark"] .plan.pro { background:linear-gradient(135deg,#4f3d0b,#8f6d10); color:#fff0a8; }
     :root[data-theme="dark"] .plan.team { background:linear-gradient(135deg,#281f46,#483580); color:#ddd6fe; }
+    .account-card.account-disabled .identity,.account-card.account-disabled .account-meta,.account-card.account-disabled .quota-list { opacity:.66; }
+    .account-card.account-disabled .plan { border-color:var(--border); background:var(--bg-soft); color:var(--text-3); box-shadow:none; }
+    .account-card.account-disabled .fill { background:var(--text-3); }
     .account-name { min-width:0; overflow:hidden; color:var(--text); font-size:12px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
     .account-meta { display:flex; flex-wrap:wrap; gap:6px 16px; padding:7px 10px; border:1px solid var(--border); border-radius:10px; background:color-mix(in srgb,var(--bg-page) 38%,transparent); }
     .account-meta-item { display:inline-flex; align-items:baseline; gap:5px; min-width:0; }

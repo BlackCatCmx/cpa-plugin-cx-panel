@@ -63,6 +63,13 @@ export function accountSubscriptionActiveUntil(account) {
   );
 }
 
+export function buildQuotaSnapshot(account, quota) {
+  return {
+    ...quota,
+    subscriptionActiveUntil: accountSubscriptionActiveUntil(account),
+  };
+}
+
 export function accountStatus(account) {
   const message = String(account?.status_message ?? '').trim();
   const status = String(account?.status ?? '').trim().toLowerCase();
@@ -158,6 +165,13 @@ export function parsePassiveQuota(account) {
   const order = (window) => window.key.startsWith('root-') ? 0 : window.key.startsWith('code-review-') ? 1 : 2;
   windows.sort((a, b) => order(a) - order(b) || a.label.localeCompare(b.label, 'zh-CN'));
   return { planType: accountPlan(account), observedAt: account?.quota?.observed_at ?? null, windows };
+}
+
+export function shouldInvalidateActiveQuota(account, active) {
+  if (!account) return true;
+  if (account.disabled) return false;
+  const passiveObservedAt = parsePassiveQuota(account).observedAt;
+  return Boolean(passiveObservedAt && active?.passiveObservedAt !== passiveObservedAt);
 }
 
 function first(object, ...keys) {

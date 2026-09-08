@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+release_change=false
+while IFS= read -r file; do
+  case "$file" in
+    *.go|web/*|web-test/*|go.mod|go.sum|registry.json|.github/workflows/release-linux-amd64.yml)
+      release_change=true
+      break
+      ;;
+  esac
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+if [[ "$release_change" != true ]]; then
+  exit 0
+fi
+if ! git diff --cached --quiet -- registry.json; then
+  exit 0
+fi
+if ! git diff --quiet -- registry.json; then
+  echo "registry.json has unstaged changes; stage or restore them before committing" >&2
+  exit 1
+fi
+
+node scripts/bump-registry-patch.mjs
+git add registry.json

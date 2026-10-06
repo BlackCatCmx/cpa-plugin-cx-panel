@@ -1,6 +1,8 @@
 export const DEFAULT_CODEX_USER_AGENT =
   'codex-tui/0.146.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10 (codex-tui; 0.146.0)';
 
+export const DEFAULT_CLAUDE_USER_AGENT = 'claude-cli/2.1.280 (external, cli)';
+
 const quotaKeyPattern = /^x-codex-(?:(.+)-)?(primary|secondary)-used-percent$/;
 
 const scalar = (value) => (Array.isArray(value) ? value[0] : value);
@@ -13,11 +15,15 @@ function firstText(...values) {
   return '';
 }
 
-export function selectCodexAccounts(payload) {
+export function accountProvider(account) {
+  return firstText(account?.provider, account?.type).toLowerCase();
+}
+
+export function selectQuotaAccounts(payload) {
   const files = Array.isArray(payload?.files) ? payload.files : [];
   return files.filter((file) => {
-    const provider = firstText(file?.provider, file?.type).toLowerCase();
-    return provider === 'codex' && String(file?.auth_index ?? '').trim() !== '';
+    const provider = accountProvider(file);
+    return ['codex', 'claude'].includes(provider) && String(file?.auth_index ?? '').trim() !== '';
   });
 }
 
@@ -36,7 +42,7 @@ export function quotaTone(remaining) {
 }
 
 export function accountTitle(account) {
-  return firstText(account?.label, account?.email, account?.name) || 'Codex 账号';
+  return firstText(account?.label, account?.email, account?.name) || `${accountProvider(account) === 'claude' ? 'Claude' : 'Codex'} 账号`;
 }
 
 export function planInfo(value) {
@@ -131,14 +137,14 @@ function resetTime(resetAt, resetAfter, observedAt) {
     : null;
 }
 
-function quotaWindow(key, label, used, resetAt) {
+function quotaWindow(key, label, used, resetAt, allowOverage = false) {
   const raw = used === null || used === undefined ? '' : String(used).trim();
   const number = Number(raw);
-  const valid = raw !== '' && Number.isFinite(number) && number >= 0 && number <= 100;
+  const valid = raw !== '' && Number.isFinite(number) && number >= 0 && (allowOverage || number <= 100);
   return {
     key,
     label,
-    remaining: valid ? 100 - number : null,
+    remaining: valid ? Math.max(0, 100 - number) : null,
     invalidPercent: !valid,
     resetAt,
   };
@@ -147,6 +153,16 @@ function quotaWindow(key, label, used, resetAt) {
 export function parsePassiveQuota(account) {
   const signals = normalizedSignals(account?.quota?.signals);
   const windows = [];
+  if (accountProvider(account) === 'claude') {
+    for (const [key, label] of [['5h', '5 小时窗口'], ['7d', '7 天窗口'], ['7d_oi', '7 天窗口 · 含额外用量']]) {
+      const prefix = `anthropic-ratelimit-unified-${key}-`;
+      const used = signals.get(`${prefix}utilization`);
+      if (used === undefined) continue;
+      windows.push(quotaWindow(key, label, used === '' ? null : Number(used) * 100,
+        resetTime(signals.get(`${prefix}reset`), null, account?.quota?.observed_at), true));
+    }
+    return { planType: '', observedAt: account?.quota?.observed_at ?? null, windows };
+  }
   for (const [key, used] of signals) {
     const match = key.match(quotaKeyPattern);
     if (!match) continue;
@@ -170,7 +186,9 @@ export function parsePassiveQuota(account) {
 export function shouldInvalidateActiveQuota(account, active) {
   if (!account) return true;
   if (account.disabled) return false;
-  const passiveObservedAt = parsePassiveQuota(account).observedAt;
+  const passive = parsePassiveQuota(account);
+  if (accountProvider(account) === 'claude' && !passive.windows.some((window) => !window.invalidPercent)) return false;
+  const passiveObservedAt = passive.observedAt;
   return Boolean(passiveObservedAt && active?.passiveObservedAt !== passiveObservedAt);
 }
 
@@ -207,9 +225,32 @@ function appendActiveWindows(result, limit, namespace, displayName) {
   }
 }
 
-export function parseActiveQuota(payload) {
+export function parseActiveQuota(payload, provider = 'codex') {
   if (!payload || typeof payload !== 'object') throw new Error('额度响应格式无效');
   const windows = [];
+  if (provider === 'claude') {
+    const fable = Array.isArray(payload.limits) ? payload.limits.filter((limit) =>
+      limit?.kind === 'weekly_scoped' && ['fable', 'fable 5'].includes(String(limit?.scope?.model?.display_name ?? '').toLowerCase())
+      && limit.percent !== null && limit.percent !== undefined) : [];
+    for (const [key, label] of [
+      ['five_hour', '5 小时窗口'], ['seven_day', '7 天窗口'],
+      ['seven_day_oauth_apps', 'OAuth 应用 · 7 天窗口'], ['seven_day_opus', 'Opus · 7 天窗口'],
+      ['seven_day_sonnet', 'Sonnet · 7 天窗口'], ['seven_day_cowork', 'Cowork · 7 天窗口'],
+      ['iguana_necktie', 'Fable 5 · 7 天窗口'],
+    ]) {
+      const window = payload[key];
+      if (!window || (key === 'iguana_necktie' && fable.length)) continue;
+      windows.push(quotaWindow(key, label, window.utilization, dateLikeTimestamp(window.resets_at), true));
+    }
+    if (fable.length) {
+      const window = fable.find((limit) => limit.is_active === true) ?? fable[0];
+      windows.push(quotaWindow('iguana_necktie', 'Fable 5 · 7 天窗口', window.percent, dateLikeTimestamp(window.resets_at), true));
+    }
+    if (payload.extra_usage?.is_enabled) {
+      windows.push(quotaWindow('extra_usage', '额外用量', payload.extra_usage.utilization, null, true));
+    }
+    return { planType: '', observedAt: new Date().toISOString(), windows };
+  }
   appendActiveWindows(windows, first(payload, 'rate_limit', 'rateLimit', 'rate_limits', 'rateLimits'), '', '');
   appendActiveWindows(windows, first(payload, 'code_review_rate_limit', 'codeReviewRateLimit', 'code_review_rate_limits', 'codeReviewRateLimits'), 'code-review', 'code-review');
 
@@ -248,7 +289,12 @@ export function parseResetCreditsAvailableCount(payload) {
   }).length;
 }
 
-export function resolveRefreshUserAgent(pluginConfig, cpaConfig) {
+export function resolveRefreshUserAgent(pluginConfig, cpaConfig, provider = 'codex') {
+  if (provider === 'claude') {
+    const configured = String(pluginConfig?.claude_refresh_user_agent ?? '').trim();
+    return configured ? { value: configured, source: '插件设置' }
+      : { value: DEFAULT_CLAUDE_USER_AGENT, source: '内置默认值' };
+  }
   const configured = String(pluginConfig?.refresh_user_agent ?? '').trim();
   if (configured) return { value: configured, source: '插件设置' };
   const inherited = String(cpaConfig?.['codex-header-defaults']?.['user-agent'] ?? '').trim();
@@ -265,6 +311,19 @@ export function buildRefreshRequest(account, userAgent) {
   const authIndex = String(account?.auth_index ?? '').trim();
   if (!authIndex) throw new Error('账号缺少 auth_index');
   validateUserAgent(userAgent);
+  if (accountProvider(account) === 'claude') {
+    return {
+      auth_index: authIndex,
+      method: 'GET',
+      url: 'https://api.anthropic.com/api/oauth/usage',
+      header: {
+        Authorization: 'Bearer $TOKEN$',
+        'Content-Type': 'application/json',
+        'User-Agent': userAgent,
+        'anthropic-beta': 'oauth-2025-04-20',
+      },
+    };
+  }
   const header = {
     Authorization: 'Bearer $TOKEN$',
     'Content-Type': 'application/json',

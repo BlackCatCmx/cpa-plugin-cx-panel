@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Codex 额度</title>
+  <title>Codex / Claude 额度</title>
   <style>
     :root {
       color-scheme: light;
@@ -139,11 +139,11 @@
 <body>
   <main class="page">
     <header class="topbar">
-      <div><div class="eyebrow"><span class="eyebrow-dot"></span>CPA CX PANEL · CODEX</div><h1>Codex 额度</h1></div>
+      <div><div class="eyebrow"><span class="eyebrow-dot"></span>CPA CX PANEL · CODEX / CLAUDE</div><h1>Codex / Claude 额度</h1></div>
       <button id="theme-button" class="icon-button" type="button" title="切换主题" aria-label="切换主题"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9c0-.7-.08-1.37-.23-2.02A7 7 0 0 1 12 3Z"/></svg></button>
     </header>
     <section class="summary" aria-label="额度总览">
-      <div class="summary-item"><div class="summary-label">Codex 凭证</div><div class="summary-value"><span id="count-all">—</span><span class="summary-note">个账号</span></div></div>
+      <div class="summary-item"><div class="summary-label">Codex / Claude 凭证</div><div class="summary-value"><span id="count-all">—</span><span class="summary-note">个账号</span></div></div>
       <div class="summary-item"><div class="summary-label">已有额度</div><div class="summary-value"><span id="count-quota">—</span><span class="summary-note">个账号</span></div></div>
       <div class="summary-item"><div class="summary-label">当前异常</div><div class="summary-value summary-error"><span id="count-error">—</span><span class="summary-note">需在凭证页处理</span></div></div>
       <div class="summary-item"><div class="summary-label">自动更新</div><div class="summary-value">30s</div></div>
@@ -152,10 +152,16 @@
     <details id="settings-details" class="settings-shell">
       <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.16.38.37.72.6 1 .3.35.69.56 1.1.6h.1v4h-.1c-.41.04-.8.25-1.1.6-.23.28-.44.62-.6 1Z"/></svg>刷新请求设置<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m7 10 5 5 5-5"/></svg></summary>
       <div class="settings">
-        <div class="settings-title"><strong>刷新请求 User-Agent</strong><span>仅用于此页面的额度刷新，不修改 CPA 正常模型请求。</span></div>
+        <div class="settings-title"><strong>Codex 刷新 User-Agent</strong><span>仅用于 Codex 额度刷新，留空继承 CPA 设置。</span></div>
         <label><span class="field-label"><span>实际请求 UA</span><span id="ua-source" class="source-tag"></span></span><input id="ua-input" class="ua-input" type="text" autocomplete="off" spellcheck="false"></label>
         <div class="settings-actions"><button id="ua-reset" class="button" type="button">恢复继承</button><button id="ua-save" class="button primary" type="button">保存 UA</button></div>
         <span></span><span id="ua-message" class="setting-message"></span>
+      </div>
+      <div class="settings">
+        <div class="settings-title"><strong>Claude 刷新 User-Agent</strong><span>仅用于 Claude 额度刷新，留空使用内置默认值。</span></div>
+        <label><span class="field-label"><span>实际请求 UA</span><span id="claude-ua-source" class="source-tag"></span></span><input id="claude-ua-input" class="ua-input" type="text" autocomplete="off" spellcheck="false"></label>
+        <div class="settings-actions"><button id="claude-ua-reset" class="button" type="button">恢复默认</button><button id="claude-ua-save" class="button primary" type="button">保存 UA</button></div>
+        <span></span><span id="claude-ua-message" class="setting-message"></span>
       </div>
     </details>
     <section>

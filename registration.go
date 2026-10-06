@@ -20,6 +20,11 @@ func pluginRegistration() any {
 				"Type":        "string",
 				"EnumValues":  []string{},
 				"Description": "User-Agent used for manual Codex quota refreshes. Empty inherits the CPA Codex default.",
+			}, {
+				"Name":        "claude_refresh_user_agent",
+				"Type":        "string",
+				"EnumValues":  []string{},
+				"Description": "User-Agent used for manual Claude quota refreshes. Empty uses the built-in Claude CLI default.",
 			}},
 		},
 		Capabilities: map[string]any{"management_api": true},
@@ -32,8 +37,8 @@ func managementRegistration() any {
 	}{Resources: []map[string]string{
 		{
 			"Path":        panelPath,
-			"Menu":        "Codex 额度",
-			"Description": "Codex account quota panel",
+			"Menu":        "Codex / Claude 额度",
+			"Description": "Codex and Claude account quota panel",
 		},
 		{"Path": "/panel-app.mjs"},
 		{"Path": "/panel-logic.mjs"},

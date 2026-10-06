@@ -18,22 +18,23 @@ import {
   quotaTone,
   resolveRefreshUserAgent,
   safeUpstreamError,
-  selectCodexAccounts,
+  selectQuotaAccounts,
   shouldInvalidateActiveQuota,
   validateUserAgent,
 } from '../web/panel-logic.mjs';
 
-test('只选择带 auth_index 的 Codex 账号', () => {
-  const result = selectCodexAccounts({ files: [
+test('只选择带 auth_index 的 Codex 和 Claude 账号', () => {
+  const result = selectQuotaAccounts({ files: [
     { provider: 'codex', auth_index: '1' },
     { type: 'claude', auth_index: '2' },
     { provider: 'codex' },
+    { provider: 'gemini', auth_index: '3' },
   ] });
-  assert.equal(result.length, 1);
+  assert.deepEqual(result.map((item) => item.auth_index), ['1', '2']);
 });
 
 test('同邮箱的不同 auth_index 不会合并', () => {
-  const result = selectCodexAccounts({ files: [
+  const result = selectQuotaAccounts({ files: [
     { provider: 'codex', auth_index: '1', email: 'same@example.com' },
     { provider: 'codex', auth_index: '2', email: 'same@example.com' },
   ] });
@@ -208,6 +209,91 @@ test('构造固定的主动刷新请求', () => {
   assert.equal(request.header.Authorization, 'Bearer $TOKEN$');
   assert.equal(request.header['Chatgpt-Account-Id'], 'account-1');
   assert.equal(request.header['User-Agent'], 'test-ua');
+});
+
+test('Claude UA 使用独立插件设置，留空恢复硬编码默认值', () => {
+  const config = { refresh_user_agent: 'codex-custom', claude_refresh_user_agent: ' claude-custom ' };
+  assert.deepEqual(resolveRefreshUserAgent(config, {}, 'claude'), { value: 'claude-custom', source: '插件设置' });
+  assert.deepEqual(resolveRefreshUserAgent({ ...config, claude_refresh_user_agent: ' ' }, {}, 'claude'), {
+    value: 'claude-cli/2.1.280 (external, cli)', source: '内置默认值',
+  });
+  assert.equal(resolveRefreshUserAgent(config, {}).value, 'codex-custom');
+});
+
+test('Claude 主动刷新使用 OAuth usage 与专属请求头', () => {
+  const request = buildRefreshRequest({ type: 'claude', auth_index: '9' }, 'claude-custom');
+  assert.equal(request.url, 'https://api.anthropic.com/api/oauth/usage');
+  assert.equal(request.header.Authorization, 'Bearer $TOKEN$');
+  assert.equal(request.header['anthropic-beta'], 'oauth-2025-04-20');
+  assert.equal(request.header['User-Agent'], 'claude-custom');
+  assert.equal(request.header['Chatgpt-Account-Id'], undefined);
+  assert.throws(() => buildRefreshRequest({ type: 'claude', auth_index: '9' }, 'bad\r\nua'), /控制字符/);
+});
+
+test('Claude 主动百分比、模型窗口与 ISO 重置时间', () => {
+  const quota = parseActiveQuota({
+    five_hour: { utilization: 12, resets_at: '2026-10-05T12:00:00Z' },
+    seven_day: { utilization: 53, resets_at: null },
+    seven_day_opus: null,
+    seven_day_sonnet: { utilization: 0, resets_at: null },
+    extra_usage: { is_enabled: true, utilization: 20 },
+  }, 'claude');
+  assert.deepEqual(quota.windows.map((window) => window.remaining), [88, 47, 100, 80]);
+  assert.equal(quota.windows[0].resetAt, Date.parse('2026-10-05T12:00:00Z'));
+  assert.equal(quota.windows[1].resetAt, null);
+  assert.equal(quota.resetCreditsAvailableCount, undefined);
+});
+
+test('Claude Fable 模型窗口优先使用已启用的 limits 数据', () => {
+  const quota = parseActiveQuota({
+    iguana_necktie: { utilization: 10 },
+    limits: [
+      { kind: 'weekly_scoped', scope: { model: { display_name: 'Fable 5' } }, percent: 20 },
+      { kind: 'weekly_scoped', scope: { model: { display_name: 'Fable 5' } }, percent: 30, is_active: true },
+    ],
+  }, 'claude');
+  assert.equal(quota.windows.length, 1);
+  assert.equal(quota.windows[0].remaining, 70);
+});
+
+test('Claude 被动 utilization 为比例，主动 utilization 为百分比', () => {
+  const account = { provider: 'claude', quota: {
+    observed_at: '2026-10-05T00:00:00Z',
+    signals: {
+      'Anthropic-Ratelimit-Unified-5h-Utilization': '0.12',
+      'Anthropic-Ratelimit-Unified-5h-Reset': '1791201600',
+      'Anthropic-Ratelimit-Unified-7d-Utilization': '0',
+      'Anthropic-Ratelimit-Unified-Fallback-Percentage': '0.5',
+    },
+  } };
+  const quota = parsePassiveQuota(account);
+  assert.deepEqual(quota.windows.map((window) => window.remaining), [88, 100]);
+  assert.equal(quota.windows[0].resetAt, 1791201600000);
+  assert.equal(shouldInvalidateActiveQuota(account, { passiveObservedAt: null }), true);
+  assert.equal(shouldInvalidateActiveQuota(account, { passiveObservedAt: account.quota.observed_at }), false);
+});
+
+test('Claude 被动只有状态或无效用量时保留主动缓存', () => {
+  const account = { provider: 'claude', quota: { observed_at: '2026-10-05T00:00:00Z', signals: {
+    'Anthropic-Ratelimit-Unified-Status': 'allowed',
+    'Anthropic-Ratelimit-Unified-5h-Utilization': '',
+  } } };
+  assert.equal(parsePassiveQuota(account).windows[0].invalidPercent, true);
+  assert.equal(shouldInvalidateActiveQuota(account, { passiveObservedAt: null }), false);
+  assert.equal(parseActiveQuota({ five_hour: { utilization: null } }, 'claude').windows[0].invalidPercent, true);
+});
+
+test('Claude 真实超额用量显示剩余零，负数仍为无效', () => {
+  const passive = parsePassiveQuota({ provider: 'claude', quota: { signals: {
+    'Anthropic-Ratelimit-Unified-7d_oi-Utilization': '1.02',
+  } } });
+  assert.equal(passive.windows[0].remaining, 0);
+  assert.equal(passive.windows[0].invalidPercent, false);
+  const active = parseActiveQuota({
+    seven_day: { utilization: 105 }, five_hour: { utilization: -1 },
+  }, 'claude');
+  assert.equal(active.windows[1].remaining, 0);
+  assert.equal(active.windows[0].invalidPercent, true);
 });
 
 test('构造只读的主动重置次数请求', () => {

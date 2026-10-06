@@ -1,6 +1,7 @@
 import {
   accountPage,
   accountPlan,
+  accountProvider,
   accountStatus,
   accountSubscriptionActiveUntil,
   accountTitle,
@@ -19,7 +20,7 @@ import {
   quotaTone,
   resolveRefreshUserAgent,
   safeUpstreamError,
-  selectCodexAccounts,
+  selectQuotaAccounts,
   shouldInvalidateActiveQuota,
   validateUserAgent,
 } from './panel-logic.mjs';
@@ -41,6 +42,7 @@ const state = {
   pluginConfig: {},
   cpaConfig: {},
   userAgent: '',
+  claudeUserAgent: '',
 };
 
 const elements = {
@@ -62,6 +64,11 @@ const elements = {
   uaMessage: document.querySelector('#ua-message'),
   uaSave: document.querySelector('#ua-save'),
   uaReset: document.querySelector('#ua-reset'),
+  claudeUaInput: document.querySelector('#claude-ua-input'),
+  claudeUaSource: document.querySelector('#claude-ua-source'),
+  claudeUaMessage: document.querySelector('#claude-ua-message'),
+  claudeUaSave: document.querySelector('#claude-ua-save'),
+  claudeUaReset: document.querySelector('#claude-ua-reset'),
 };
 
 function decodeBase64(value) {
@@ -213,18 +220,24 @@ function renderWindow(windowData) {
 function effectiveStatus(account) {
   const status = accountStatus(account);
   const activeError = state.activeErrors.get(String(account.auth_index));
-  return activeError ? { kind: 'error', label: '刷新失败', message: activeError } : status;
+  if (activeError) return { kind: 'error', label: '刷新失败', message: activeError };
+  if (status.kind === 'waiting' && !account.disabled && displayedQuota(account).windows.some((window) => !window.invalidPercent)) {
+    return { kind: 'normal', label: '正常', message: '' };
+  }
+  return status;
 }
 
 function renderCard(account) {
   const key = String(account.auth_index);
   const quota = displayedQuota(account);
+  const isClaude = accountProvider(account) === 'claude';
   const plan = planInfo(quota.planType || accountPlan(account));
   const status = effectiveStatus(account);
   const card = createElement('article', `account-card${account.disabled ? ' account-disabled' : ''}`);
   const head = createElement('div', 'account-head');
   const identity = createElement('div', 'identity');
-  identity.append(createElement('span', `plan ${plan.tone}`, plan.label));
+  identity.append(createElement('span', 'plan neutral', isClaude ? 'Claude' : 'Codex'));
+  if (!isClaude) identity.append(createElement('span', `plan ${plan.tone}`, plan.label));
   const name = createElement('div', 'account-name', accountTitle(account));
   name.title = accountTitle(account);
   identity.append(name);
@@ -267,7 +280,7 @@ function renderCard(account) {
   const subscriptionItem = createElement('span', `account-meta-item${subscriptionTone ? ` expiry-${subscriptionTone}` : ''}`);
   subscriptionItem.append(createElement('span', 'account-meta-label', '套餐到期'), createElement('span', 'account-meta-value', subscriptionUntil));
   if (subscriptionRelative) subscriptionItem.append(createElement('span', 'account-meta-relative', subscriptionRelative));
-  meta.append(subscriptionItem);
+  if (!isClaude) meta.append(subscriptionItem);
   if (resetCreditsCount !== null) {
     const item = createElement('span', 'account-meta-item');
     item.append(createElement('span', 'account-meta-label', '主动重置次数'), createElement('span', 'account-meta-value', String(resetCreditsCount)));
@@ -278,11 +291,16 @@ function renderCard(account) {
     item.append(createElement('span', 'account-meta-label', '主动重置次数'), createElement('span', 'account-meta-value', '获取失败'));
     meta.append(item);
   }
+  if (isClaude) {
+    const source = state.activeQuota.has(key) ? '主动缓存' : '被动采集';
+    const updatedAt = formatUTC8DateTime(quota.observedAt);
+    meta.append(createElement('span', 'account-meta-item', updatedAt ? `${source} · ${updatedAt}` : '点击刷新获取额度'));
+  }
   card.append(meta);
   if (status.message) card.append(createElement('div', 'account-error', status.message));
   const list = createElement('div', 'quota-list');
   if (quota.windows.length) quota.windows.forEach((windowData) => list.append(renderWindow(windowData)));
-  else list.append(createElement('div', 'account-empty', '暂无额度数据'));
+  else list.append(createElement('div', 'account-empty', isClaude ? '暂无额度数据，点击刷新或等待业务请求采集' : '暂无额度数据'));
   card.append(list);
   return card;
 }
@@ -307,7 +325,7 @@ function render() {
   elements.pagination.replaceChildren();
   elements.pagination.hidden = paged.totalPages <= 1;
   if (!filtered.length) {
-    elements.grid.append(createElement('div', 'empty', state.accounts.length ? '该分类下没有账号' : '没有 Codex 账号'));
+    elements.grid.append(createElement('div', 'empty', state.accounts.length ? '该分类下没有账号' : '没有 Codex 或 Claude 账号'));
     return;
   }
   paged.items.forEach((account) => elements.grid.append(renderCard(account)));
@@ -330,7 +348,7 @@ async function pollAccounts({ initial = false } = {}) {
   state.polling = true;
   try {
     const response = await managementFetch('/auth-files');
-    state.accounts = selectCodexAccounts(response);
+    state.accounts = selectQuotaAccounts(response);
     reconcileActiveQuota();
     showBanner('');
     elements.pollState.textContent = '刚刚更新';
@@ -383,7 +401,7 @@ async function refreshAccount(account) {
   state.activeErrors.delete(key);
   render();
   try {
-    const request = buildRefreshRequest(account, state.userAgent);
+    const request = buildRefreshRequest(account, accountProvider(account) === 'claude' ? state.claudeUserAgent : state.userAgent);
     let response;
     try {
       response = await managementFetch('/api-call', { method: 'POST', body: JSON.stringify(request) }, 65_000);
@@ -397,25 +415,27 @@ async function refreshAccount(account) {
     let payload;
     try { payload = typeof response.body === 'string' ? JSON.parse(response.body) : response.body; }
     catch { throw new Error('上游额度响应不是有效 JSON'); }
-    const quota = parseActiveQuota(payload);
+    const quota = parseActiveQuota(payload, accountProvider(account));
     if (!quota.windows.length) throw new Error('上游响应中没有可用额度窗口');
-    try {
-      const resetResponse = await managementFetch('/api-call', {
-        method: 'POST',
-        body: JSON.stringify(buildResetCreditsRequest(account, state.userAgent)),
-      });
-      const resetStatus = Number(resetResponse?.status_code);
-      if (!Number.isInteger(resetStatus) || resetStatus < 200 || resetStatus >= 300) {
-        throw new Error(safeUpstreamError(resetResponse));
+    if (accountProvider(account) !== 'claude') {
+      try {
+        const resetResponse = await managementFetch('/api-call', {
+          method: 'POST',
+          body: JSON.stringify(buildResetCreditsRequest(account, state.userAgent)),
+        });
+        const resetStatus = Number(resetResponse?.status_code);
+        if (!Number.isInteger(resetStatus) || resetStatus < 200 || resetStatus >= 300) {
+          throw new Error(safeUpstreamError(resetResponse));
+        }
+        let resetPayload;
+        try { resetPayload = typeof resetResponse.body === 'string' ? JSON.parse(resetResponse.body) : resetResponse.body; }
+        catch { throw new Error('主动重置次数响应不是有效 JSON'); }
+        const count = parseResetCreditsAvailableCount(resetPayload);
+        if (count === null) throw new Error('主动重置次数响应格式无效');
+        quota.resetCreditsAvailableCount = count;
+      } catch (error) {
+        if (quota.resetCreditsAvailableCount === null) quota.resetCreditsError = error.message;
       }
-      let resetPayload;
-      try { resetPayload = typeof resetResponse.body === 'string' ? JSON.parse(resetResponse.body) : resetResponse.body; }
-      catch { throw new Error('主动重置次数响应不是有效 JSON'); }
-      const count = parseResetCreditsAvailableCount(resetPayload);
-      if (count === null) throw new Error('主动重置次数响应格式无效');
-      quota.resetCreditsAvailableCount = count;
-    } catch (error) {
-      if (quota.resetCreditsAvailableCount === null) quota.resetCreditsError = error.message;
     }
     state.activeQuota.set(key, { passiveObservedAt: account?.quota?.observed_at ?? null, quota });
     saveActiveQuota();
@@ -433,21 +453,28 @@ function applyUserAgent() {
   elements.uaInput.value = String(state.pluginConfig?.refresh_user_agent ?? '');
   elements.uaInput.placeholder = resolved.value;
   elements.uaSource.textContent = `当前使用：${resolved.source}`;
+  const claude = resolveRefreshUserAgent(state.pluginConfig, state.cpaConfig, 'claude');
+  state.claudeUserAgent = claude.value;
+  elements.claudeUaInput.value = String(state.pluginConfig?.claude_refresh_user_agent ?? '');
+  elements.claudeUaInput.placeholder = claude.value;
+  elements.claudeUaSource.textContent = `当前使用：${claude.source}`;
 }
 
-async function saveUserAgent(value) {
-  elements.uaMessage.textContent = '';
+async function saveUserAgent(value, provider = 'codex') {
+  const field = provider === 'claude' ? 'claude_refresh_user_agent' : 'refresh_user_agent';
+  const message = provider === 'claude' ? elements.claudeUaMessage : elements.uaMessage;
+  message.textContent = '';
   try {
     validateUserAgent(value);
     await managementFetch(`/plugins/${pluginID}/config`, {
       method: 'PATCH',
-      body: JSON.stringify({ refresh_user_agent: value }),
+      body: JSON.stringify({ [field]: value }),
     });
-    state.pluginConfig = { ...state.pluginConfig, refresh_user_agent: value };
+    state.pluginConfig = { ...state.pluginConfig, [field]: value };
     applyUserAgent();
-    elements.uaMessage.textContent = '已保存';
+    message.textContent = '已保存';
   } catch (error) {
-    elements.uaMessage.textContent = error.message;
+    message.textContent = error.message;
   }
 }
 
@@ -464,6 +491,8 @@ elements.tabs.addEventListener('click', (event) => {
 
 elements.uaSave.addEventListener('click', () => saveUserAgent(elements.uaInput.value.trim()));
 elements.uaReset.addEventListener('click', () => saveUserAgent(''));
+elements.claudeUaSave.addEventListener('click', () => saveUserAgent(elements.claudeUaInput.value.trim(), 'claude'));
+elements.claudeUaReset.addEventListener('click', () => saveUserAgent('', 'claude'));
 elements.theme.addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';

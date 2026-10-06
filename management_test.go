@@ -12,7 +12,7 @@ func TestServePanelResources(t *testing.T) {
 		contentType string
 		contains    string
 	}{
-		{path: "/v0/resource/plugins/" + pluginID + panelPath, contentType: "text/html", contains: "Codex 额度"},
+		{path: "/v0/resource/plugins/" + pluginID + panelPath, contentType: "text/html", contains: "<title>Codex / Claude 额度</title>"},
 		{path: "/v0/resource/plugins/" + pluginID + "/panel-app.mjs", contentType: "text/javascript", contains: "initialize()"},
 		{path: "/panel-logic.mjs", contentType: "text/javascript", contains: "parsePassiveQuota"},
 	}

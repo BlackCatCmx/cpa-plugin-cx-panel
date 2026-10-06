@@ -6,6 +6,7 @@ import {
   accountSubscriptionActiveUntil,
   accountTitle,
   buildQuotaSnapshot,
+  buildClaudeProfileRequest,
   buildStatusToggleRequest,
   buildRefreshRequest,
   buildResetCreditsRequest,
@@ -14,6 +15,7 @@ import {
   formatReset,
   formatUTC8DateTime,
   parseActiveQuota,
+  parseClaudeProfile,
   parsePassiveQuota,
   parseResetCreditsAvailableCount,
   planInfo,
@@ -159,7 +161,7 @@ function displayedQuota(account) {
   const passive = parsePassiveQuota(account);
   const active = state.activeQuota.get(key);
   if (!active) return passive;
-  return active.quota;
+  return { ...(active.quota ?? passive), ...active.profile };
 }
 
 function loadActiveQuota() {
@@ -170,7 +172,7 @@ function loadActiveQuota() {
   for (const entry of entries) {
     if (!Array.isArray(entry) || entry.length !== 2) continue;
     const [key, value] = entry;
-    if (typeof key !== 'string' || !Array.isArray(value?.quota?.windows)) continue;
+    if (typeof key !== 'string' || (!Array.isArray(value?.quota?.windows) && !value?.profile && !value?.profileError)) continue;
     state.activeQuota.set(key, value);
   }
 }
@@ -184,8 +186,10 @@ function reconcileActiveQuota() {
   let changed = false;
   for (const [key, active] of state.activeQuota) {
     const account = accounts.get(key);
-    if (shouldInvalidateActiveQuota(account, active)) {
-      state.activeQuota.delete(key);
+    if (!account || (active.quota && shouldInvalidateActiveQuota(account, active))) {
+      if (account && accountProvider(account) === 'claude' && (active.profile || active.profileError)) {
+        state.activeQuota.set(key, { profile: active.profile, profileError: active.profileError });
+      } else state.activeQuota.delete(key);
       changed = true;
     }
   }
@@ -237,7 +241,7 @@ function renderCard(account) {
   const head = createElement('div', 'account-head');
   const identity = createElement('div', 'identity');
   identity.append(createElement('span', 'plan neutral', isClaude ? 'Claude' : 'Codex'));
-  if (!isClaude) identity.append(createElement('span', `plan ${plan.tone}`, plan.label));
+  identity.append(createElement('span', `plan ${plan.tone}`, isClaude && !quota.planType ? '未知套餐' : plan.label));
   const name = createElement('div', 'account-name', accountTitle(account));
   name.title = accountTitle(account);
   identity.append(name);
@@ -281,6 +285,25 @@ function renderCard(account) {
   subscriptionItem.append(createElement('span', 'account-meta-label', '套餐到期'), createElement('span', 'account-meta-value', subscriptionUntil));
   if (subscriptionRelative) subscriptionItem.append(createElement('span', 'account-meta-relative', subscriptionRelative));
   if (!isClaude) meta.append(subscriptionItem);
+  else {
+    const createdItem = createElement('span', 'account-meta-item');
+    createdItem.append(createElement('span', 'account-meta-label', '套餐开通'),
+      createElement('span', 'account-meta-value', formatUTC8DateTime(quota.subscriptionCreatedAt) || '未知'));
+    meta.append(createdItem);
+    const subscriptionStatus = quota.subscriptionStatus;
+    if (subscriptionStatus) {
+      const item = createElement('span', 'account-meta-item');
+      item.append(createElement('span', 'account-meta-label', '订阅状态'),
+        createElement('span', 'account-meta-value', subscriptionStatus === 'active' ? '有效' : subscriptionStatus));
+      meta.append(item);
+    }
+    if (state.activeQuota.get(key)?.profileError) {
+      const item = createElement('span', 'account-meta-item account-meta-failed');
+      item.title = state.activeQuota.get(key).profileError;
+      item.append(createElement('span', 'account-meta-label', '套餐资料'), createElement('span', 'account-meta-value', '获取失败'));
+      meta.append(item);
+    }
+  }
   if (resetCreditsCount !== null) {
     const item = createElement('span', 'account-meta-item');
     item.append(createElement('span', 'account-meta-label', '主动重置次数'), createElement('span', 'account-meta-value', String(resetCreditsCount)));
@@ -291,13 +314,18 @@ function renderCard(account) {
     item.append(createElement('span', 'account-meta-label', '主动重置次数'), createElement('span', 'account-meta-value', '获取失败'));
     meta.append(item);
   }
-  if (isClaude) {
-    const source = state.activeQuota.has(key) ? '主动缓存' : '被动采集';
+  {
+    const source = state.activeQuota.get(key)?.quota ? '主动缓存' : '被动采集';
     const updatedAt = formatUTC8DateTime(quota.observedAt);
-    meta.append(createElement('span', 'account-meta-item', updatedAt ? `${source} · ${updatedAt}` : '点击刷新获取额度'));
+    const item = createElement('span', 'account-meta-item');
+    item.append(createElement('span', 'account-meta-label', updatedAt ? source : '额度更新'),
+      createElement('span', 'account-meta-value', updatedAt || '等待数据'));
+    meta.append(item);
   }
   card.append(meta);
   if (status.message) card.append(createElement('div', 'account-error', status.message));
+  const profileError = state.activeQuota.get(key)?.profileError;
+  if (profileError) card.append(createElement('div', 'account-error', `套餐资料获取失败：${profileError}`));
   const list = createElement('div', 'quota-list');
   if (quota.windows.length) quota.windows.forEach((windowData) => list.append(renderWindow(windowData)));
   else list.append(createElement('div', 'account-empty', isClaude ? '暂无额度数据，点击刷新或等待业务请求采集' : '暂无额度数据'));
@@ -378,6 +406,7 @@ async function toggleAccountStatus(account) {
     if (disabled) {
       const quota = displayedQuota(account);
       state.activeQuota.set(key, {
+        ...state.activeQuota.get(key),
         passiveObservedAt: account?.quota?.observed_at ?? null,
         quota: buildQuotaSnapshot(account, quota),
       });
@@ -417,6 +446,25 @@ async function refreshAccount(account) {
     catch { throw new Error('上游额度响应不是有效 JSON'); }
     const quota = parseActiveQuota(payload, accountProvider(account));
     if (!quota.windows.length) throw new Error('上游响应中没有可用额度窗口');
+    let profile;
+    let profileError;
+    if (accountProvider(account) === 'claude') {
+      try {
+        const profileResponse = await managementFetch('/api-call', {
+          method: 'POST', body: JSON.stringify(buildClaudeProfileRequest(account, state.claudeUserAgent)),
+        }, 65_000);
+        const profileStatus = Number(profileResponse?.status_code);
+        if (!Number.isInteger(profileStatus) || profileStatus < 200 || profileStatus >= 300) {
+          throw new Error(safeUpstreamError(profileResponse));
+        }
+        let profilePayload;
+        try { profilePayload = typeof profileResponse.body === 'string' ? JSON.parse(profileResponse.body) : profileResponse.body; }
+        catch { throw new Error('Claude 资料响应不是有效 JSON'); }
+        profile = parseClaudeProfile(profilePayload);
+      } catch (error) {
+        profileError = error.message;
+      }
+    }
     if (accountProvider(account) !== 'claude') {
       try {
         const resetResponse = await managementFetch('/api-call', {
@@ -437,7 +485,7 @@ async function refreshAccount(account) {
         if (quota.resetCreditsAvailableCount === null) quota.resetCreditsError = error.message;
       }
     }
-    state.activeQuota.set(key, { passiveObservedAt: account?.quota?.observed_at ?? null, quota });
+    state.activeQuota.set(key, { passiveObservedAt: account?.quota?.observed_at ?? null, quota, profile, profileError });
     saveActiveQuota();
   } catch (error) {
     state.activeErrors.set(key, error.message);

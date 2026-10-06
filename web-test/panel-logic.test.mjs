@@ -5,6 +5,7 @@ import {
   accountSubscriptionActiveUntil,
   accountStatus,
   buildQuotaSnapshot,
+  buildClaudeProfileRequest,
   buildStatusToggleRequest,
   buildRefreshRequest,
   buildResetCreditsRequest,
@@ -12,6 +13,7 @@ import {
   formatRelativeDateTime,
   formatUTC8DateTime,
   parseActiveQuota,
+  parseClaudeProfile,
   parsePassiveQuota,
   parseResetCreditsAvailableCount,
   planInfo,
@@ -228,6 +230,47 @@ test('Claude 主动刷新使用 OAuth usage 与专属请求头', () => {
   assert.equal(request.header['User-Agent'], 'claude-custom');
   assert.equal(request.header['Chatgpt-Account-Id'], undefined);
   assert.throws(() => buildRefreshRequest({ type: 'claude', auth_index: '9' }, 'bad\r\nua'), /控制字符/);
+});
+
+test('Claude 资料请求复用凭证索引和独立 UA，无需凭证自带套餐字段', () => {
+  const request = buildClaudeProfileRequest({ type: 'claude', auth_index: '9' }, 'claude-custom');
+  assert.equal(request.url, 'https://api.anthropic.com/api/oauth/profile');
+  assert.equal(request.header.Authorization, 'Bearer $TOKEN$');
+  assert.equal(request.header['User-Agent'], 'claude-custom');
+  assert.equal(request.header['anthropic-beta'], 'oauth-2025-04-20');
+});
+
+test('Claude 资料区分 Max 倍数，并读取真实订阅开通时间和状态', () => {
+  for (const [tier, label] of [['default_claude_max_5x', 'Max 5x'], ['default_claude_max_20x', 'Max 20x']]) {
+    const result = parseClaudeProfile({ account: { has_claude_max: true }, organization: {
+      rate_limit_tier: tier, subscription_created_at: '2026-09-13T00:00:00Z', subscription_status: 'active',
+    } });
+    assert.equal(result.planType, label);
+    assert.equal(result.subscriptionCreatedAt, Date.parse('2026-09-13T00:00:00Z'));
+    assert.equal(result.subscriptionStatus, 'active');
+    assert.equal(result.subscriptionActiveUntil, undefined);
+    assert.equal(planInfo(result.planType).tone, 'pro');
+  }
+});
+
+test('Claude Team 组织优先于个人套餐，缺少资料不能误显示 Free', () => {
+  assert.equal(parseClaudeProfile({ account: { has_claude_max: true }, organization: {
+    organization_type: 'claude_team', subscription_status: 'active',
+  } }).planType, 'Team');
+  assert.equal(parseClaudeProfile({ account: { has_claude_pro: true }, organization: {} }).planType, 'Pro');
+  assert.equal(parseClaudeProfile({ account: { has_claude_pro: false, has_claude_max: false }, organization: {} }).planType, 'Free');
+  assert.equal(parseClaudeProfile({ account: { has_claude_pro: false, has_claude_max: false }, organization: {
+    organization_type: 'claude_enterprise',
+  } }).planType, '');
+  assert.equal(parseClaudeProfile({ account: {}, organization: {} }).planType, '');
+  assert.throws(() => parseClaudeProfile({ error: 'unauthorized' }), /资料响应格式无效/);
+});
+
+test('停用快照不丢失已查询的 Claude 资料', () => {
+  const quota = { ...parseClaudeProfile({ account: { has_claude_max: true }, organization: {
+    subscription_created_at: '2026-09-13T00:00:00Z',
+  } }), windows: [] };
+  assert.equal(buildQuotaSnapshot({ type: 'claude' }, quota).subscriptionCreatedAt, quota.subscriptionCreatedAt);
 });
 
 test('Claude 主动百分比、模型窗口与 ISO 重置时间', () => {

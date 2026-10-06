@@ -49,6 +49,7 @@ export function planInfo(value) {
   const raw = String(value ?? '').trim();
   const plan = raw || 'FREE';
   const lower = plan.toLowerCase();
+  if (lower.startsWith('max')) return { label: plan, tone: 'pro' };
   if (lower.includes('team')) return { label: plan.toUpperCase(), tone: 'team' };
   if (lower.includes('pro')) return { label: plan.toUpperCase(), tone: 'pro' };
   if (lower.includes('plus')) return { label: plan.toUpperCase(), tone: 'plus' };
@@ -73,6 +74,31 @@ export function buildQuotaSnapshot(account, quota) {
   return {
     ...quota,
     subscriptionActiveUntil: accountSubscriptionActiveUntil(account),
+  };
+}
+
+export function parseClaudeProfile(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+    || !payload.account || typeof payload.account !== 'object' || Array.isArray(payload.account)
+    || !payload.organization || typeof payload.organization !== 'object' || Array.isArray(payload.organization)) {
+    throw new Error('Claude 资料响应格式无效');
+  }
+  const account = payload.account;
+  const organization = payload.organization;
+  const organizationType = firstText(organization.organization_type).toLowerCase();
+  const subscriptionStatus = firstText(organization.subscription_status).toLowerCase();
+  let planType = '';
+  if (organizationType === 'claude_team' && subscriptionStatus === 'active') planType = 'Team';
+  else if (account.has_claude_max === true) {
+    planType = organization.rate_limit_tier === 'default_claude_max_5x' ? 'Max 5x'
+      : organization.rate_limit_tier === 'default_claude_max_20x' ? 'Max 20x' : 'Max';
+  } else if (account.has_claude_pro === true) planType = 'Pro';
+  else if ((!organizationType || organizationType === 'claude_free')
+    && account.has_claude_max === false && account.has_claude_pro === false) planType = 'Free';
+  return {
+    planType,
+    subscriptionCreatedAt: dateLikeTimestamp(organization.subscription_created_at),
+    subscriptionStatus,
   };
 }
 
@@ -351,6 +377,10 @@ export function buildResetCreditsRequest(account, userAgent) {
       Originator: 'Codex Desktop',
     },
   };
+}
+
+export function buildClaudeProfileRequest(account, userAgent) {
+  return { ...buildRefreshRequest(account, userAgent), url: 'https://api.anthropic.com/api/oauth/profile' };
 }
 
 export function safeUpstreamError(response) {

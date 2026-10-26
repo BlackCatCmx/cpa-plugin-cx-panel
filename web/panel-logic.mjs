@@ -181,8 +181,11 @@ export function parsePassiveQuota(account) {
   const signals = normalizedSignals(account?.quota?.signals);
   const windows = [];
   if (accountProvider(account) === 'claude') {
-    for (const [key, label] of [['5h', '5 小时窗口'], ['7d', '7 天窗口'], ['7d_oi', '7 天窗口 · 含额外用量']]) {
-      const prefix = `anthropic-ratelimit-unified-${key}-`;
+    for (const [signal, key, label] of [
+      ['5h', 'five_hour', '5 小时窗口'], ['7d', 'seven_day', '7 天窗口'],
+      ['7d_oi', 'seven_day_fable', 'Fable 5 · 7 天窗口'],
+    ]) {
+      const prefix = `anthropic-ratelimit-unified-${signal}-`;
       const used = signals.get(`${prefix}utilization`);
       if (used === undefined) continue;
       windows.push(quotaWindow(key, label, used === '' ? null : Number(used) * 100,
@@ -217,6 +220,23 @@ export function shouldInvalidateActiveQuota(account, active) {
   if (!passive.windows.some((window) => !window.invalidPercent)) return false;
   const cachedAt = active?.quota?.observedAt;
   return Boolean(passive.observedAt && (!cachedAt || Date.parse(passive.observedAt) > Date.parse(cachedAt)));
+}
+
+export function mergePassiveQuota(account, cached) {
+  const passive = parsePassiveQuota(account);
+  if (accountProvider(account) !== 'claude' || !cached) return passive;
+  const previousKeys = { '5h': 'five_hour', '7d': 'seven_day', '7d_oi': 'seven_day_fable', iguana_necktie: 'seven_day_fable' };
+  const windows = new Map(cached.windows.map((window) => {
+    const key = previousKeys[window.key] ?? window.key;
+    return [key, { ...window, key,
+      label: key === 'seven_day_fable' ? 'Fable 5 · 7 天窗口' : window.label,
+      observedAt: window.observedAt ?? cached.observedAt,
+    }];
+  }));
+  for (const window of passive.windows) {
+    if (!window.invalidPercent || !windows.has(window.key)) windows.set(window.key, window);
+  }
+  return { ...cached, ...passive, windows: [...windows.values()] };
 }
 
 function first(object, ...keys) {
@@ -256,22 +276,34 @@ export function parseActiveQuota(payload, provider = 'codex') {
   if (!payload || typeof payload !== 'object') throw new Error('额度响应格式无效');
   const windows = [];
   if (provider === 'claude') {
-    const fable = Array.isArray(payload.limits) ? payload.limits.filter((limit) =>
+    const limits = Array.isArray(payload.limits) ? payload.limits : [];
+    const fable = limits.filter((limit) =>
       limit?.kind === 'weekly_scoped' && ['fable', 'fable 5'].includes(String(limit?.scope?.model?.display_name ?? '').toLowerCase())
-      && limit.percent !== null && limit.percent !== undefined) : [];
-    for (const [key, label] of [
-      ['five_hour', '5 小时窗口'], ['seven_day', '7 天窗口'],
+      && limit.percent !== null && limit.percent !== undefined);
+    for (const [key, label, kind] of [
+      ['five_hour', '5 小时窗口', 'session'], ['seven_day', '7 天窗口', 'weekly_all'],
       ['seven_day_oauth_apps', 'OAuth 应用 · 7 天窗口'], ['seven_day_opus', 'Opus · 7 天窗口'],
       ['seven_day_sonnet', 'Sonnet · 7 天窗口'], ['seven_day_cowork', 'Cowork · 7 天窗口'],
-      ['iguana_necktie', 'Fable 5 · 7 天窗口'],
     ]) {
       const window = payload[key];
-      if (!window || (key === 'iguana_necktie' && fable.length)) continue;
-      windows.push(quotaWindow(key, label, window.utilization, dateLikeTimestamp(window.resets_at), true));
+      if (window) {
+        windows.push(quotaWindow(key, label, window.utilization, dateLikeTimestamp(window.resets_at), true));
+      } else if (kind) {
+        const candidates = limits.filter((limit) => limit?.kind === kind);
+        const limit = candidates.find((item) => item.is_active === true) ?? candidates[0];
+        if (limit) windows.push(quotaWindow(key, label, limit.percent, dateLikeTimestamp(limit.resets_at), true));
+      }
     }
-    if (fable.length) {
-      const window = fable.find((limit) => limit.is_active === true) ?? fable[0];
-      windows.push(quotaWindow('iguana_necktie', 'Fable 5 · 7 天窗口', window.percent, dateLikeTimestamp(window.resets_at), true));
+    const legacy = payload.iguana_necktie;
+    const isCreditPool = ['limit_dollars', 'used_dollars', 'remaining_dollars'].some((key) => legacy?.[key] != null);
+    const fableLimit = fable.find((limit) => limit.is_active === true) ?? fable[0];
+    const fableWindow = fableLimit ?? payload.seven_day_overage_included ?? (isCreditPool ? null : legacy);
+    if (fableWindow) {
+      windows.push(quotaWindow('seven_day_fable', 'Fable 5 · 7 天窗口',
+        fableLimit ? fableLimit.percent : fableWindow.utilization, dateLikeTimestamp(fableWindow.resets_at), true));
+    }
+    if (isCreditPool) {
+      windows.push(quotaWindow('cloud_session_credits', '云端会话额度', legacy.utilization, dateLikeTimestamp(legacy.resets_at), true));
     }
     if (payload.extra_usage?.is_enabled) {
       windows.push(quotaWindow('extra_usage', '额外用量', payload.extra_usage.utilization, null, true));

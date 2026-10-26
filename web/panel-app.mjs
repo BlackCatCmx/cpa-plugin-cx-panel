@@ -14,6 +14,7 @@ import {
   formatRelativeDateTime,
   formatReset,
   formatUTC8DateTime,
+  mergePassiveQuota,
   parseActiveQuota,
   parseClaudeProfile,
   parsePassiveQuota,
@@ -198,7 +199,7 @@ function reconcileActiveQuota() {
     const active = state.activeQuota.get(key);
     if (!shouldInvalidateActiveQuota(account, active)) continue;
     state.activeQuota.set(key, {
-      quota: parsePassiveQuota(account),
+      quota: mergePassiveQuota(account, active?.quota),
       source: 'passive',
       profile: active?.profile,
       profileError: active?.profileError,
@@ -211,7 +212,13 @@ function reconcileActiveQuota() {
 function renderWindow(windowData) {
   const row = createElement('div', 'quota-row');
   const top = createElement('div', 'quota-top');
-  top.append(createElement('span', 'quota-label', windowData.label));
+  const label = createElement('span', 'quota-label', windowData.label);
+  if (windowData.observedAt) {
+    const cached = createElement('span', 'quota-reset', ' · 缓存');
+    label.title = `上次采集：${formatUTC8DateTime(windowData.observedAt)}`;
+    label.append(cached);
+  }
+  top.append(label);
   const value = createElement('span', 'quota-value');
   if (windowData.invalidPercent) {
     value.textContent = '数据无效';
@@ -326,15 +333,6 @@ function renderCard(account) {
     item.append(createElement('span', 'account-meta-label', '主动重置次数'), createElement('span', 'account-meta-value', '获取失败'));
     meta.append(item);
   }
-  {
-    const cached = state.activeQuota.get(key);
-    const source = cached?.quota ? cached.source === 'passive' ? '上次被动采集' : '主动缓存' : '被动采集';
-    const updatedAt = formatUTC8DateTime(quota.observedAt);
-    const item = createElement('span', 'account-meta-item');
-    item.append(createElement('span', 'account-meta-label', updatedAt ? source : '额度更新'),
-      createElement('span', 'account-meta-value', updatedAt || '等待数据'));
-    meta.append(item);
-  }
   card.append(meta);
   if (status.message) card.append(createElement('div', 'account-error', status.message));
   const profileError = state.activeQuota.get(key)?.profileError;
@@ -343,6 +341,8 @@ function renderCard(account) {
   if (quota.windows.length) quota.windows.forEach((windowData) => list.append(renderWindow(windowData)));
   else list.append(createElement('div', 'account-empty', '暂无额度数据'));
   card.append(list);
+  const updatedAt = formatUTC8DateTime(quota.observedAt);
+  card.append(createElement('div', 'quota-observed-at', updatedAt ? `额度采集于 ${updatedAt}` : '额度更新：等待数据'));
   return card;
 }
 

@@ -79,7 +79,7 @@
     :root[data-theme="dark"] .plan.plus { background:linear-gradient(135deg,#12352b,#176149); color:#a7f3d0; }
     :root[data-theme="dark"] .plan.pro { background:linear-gradient(135deg,#4f3d0b,#8f6d10); color:#fff0a8; }
     :root[data-theme="dark"] .plan.team { background:linear-gradient(135deg,#281f46,#483580); color:#ddd6fe; }
-    .account-card.account-disabled .identity,.account-card.account-disabled .account-meta,.account-card.account-disabled .quota-list { opacity:.66; }
+    .account-card.account-disabled .identity,.account-card.account-disabled .account-meta,.account-card.account-disabled .quota-list,.account-card.account-disabled .quota-observed-at { opacity:.66; }
     .account-card.account-disabled .plan { border-color:var(--border); background:var(--bg-soft); color:var(--text-3); box-shadow:none; }
     .account-card.account-disabled .fill { background:var(--text-3); }
     .account-name { min-width:0; overflow:hidden; color:var(--text); font-size:12px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
@@ -112,6 +112,7 @@
     .account-error { display:flex; align-items:center; gap:7px; padding:6px 9px; border:1px solid var(--red-border); border-radius:9px; background:var(--red-bg); color:var(--red); font:11px/1.35 var(--mono); white-space:pre-wrap; word-break:break-word; }
     .account-error::before { content:"!"; display:inline-grid; place-items:center; flex:0 0 auto; width:14px; height:14px; border:1.5px solid currentColor; border-radius:50%; font:800 9px/1 var(--sans); }
     .quota-list { display:flex; flex-direction:column; gap:12px; }
+    .quota-observed-at { color:var(--text-3); font-size:10.5px; line-height:1.4; }
     .quota-top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:6px; }
     .quota-label { overflow:hidden; color:var(--text-2); font-size:12px; font-weight:650; text-overflow:ellipsis; white-space:nowrap; }
     .quota-value { display:flex; align-items:baseline; gap:7px; flex:0 0 auto; color:var(--text); font:750 11.5px var(--mono); }

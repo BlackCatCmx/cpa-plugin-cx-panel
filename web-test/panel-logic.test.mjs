@@ -12,6 +12,7 @@ import {
   dateTimeTone,
   formatRelativeDateTime,
   formatUTC8DateTime,
+  mergePassiveQuota,
   parseActiveQuota,
   parseClaudeProfile,
   parsePassiveQuota,
@@ -306,6 +307,100 @@ test('Claude Fable 模型窗口优先使用已启用的 limits 数据', () => {
   }, 'claude');
   assert.equal(quota.windows.length, 1);
   assert.equal(quota.windows[0].remaining, 70);
+});
+
+test('Claude 新版通用周额度、Fable 和带金额的云端会话额度分别解析', () => {
+  const quota = parseActiveQuota({
+    five_hour: null,
+    seven_day: null,
+    limits: [
+      { kind: 'session', percent: 7, is_active: true, scope: null },
+      { kind: 'weekly_all', percent: 6, is_active: false, scope: null },
+      { kind: 'weekly_all', percent: 26, is_active: true, scope: null },
+      { kind: 'weekly_scoped', percent: 42, is_active: true,
+        scope: { model: { display_name: 'Fable' } }, resets_at: '2026-10-30T01:59:00Z' },
+    ],
+    iguana_necktie: { utilization: 5, limit_dollars: 100, used_dollars: 5, remaining_dollars: 95,
+      resets_at: '2026-11-05T07:59:00Z' },
+  }, 'claude');
+  assert.deepEqual(quota.windows.map(({ key, label, remaining }) => ({ key, label, remaining })), [
+    { key: 'five_hour', label: '5 小时窗口', remaining: 93 },
+    { key: 'seven_day', label: '7 天窗口', remaining: 74 },
+    { key: 'seven_day_fable', label: 'Fable 5 · 7 天窗口', remaining: 58 },
+    { key: 'cloud_session_credits', label: '云端会话额度', remaining: 95 },
+  ]);
+  assert.equal(quota.windows[2].resetAt, Date.parse('2026-10-30T01:59:00Z'));
+  assert.equal(quota.windows[3].resetAt, Date.parse('2026-11-05T07:59:00Z'));
+});
+
+test('Claude 顶层通用窗口与 limits 重复时只显示一次，金额字段不冒充 Fable', () => {
+  const quota = parseActiveQuota({
+    five_hour: { utilization: 10 }, seven_day: { utilization: 20 },
+    limits: [{ kind: 'session', percent: 10 }, { kind: 'weekly_all', percent: 20 }],
+    iguana_necktie: { utilization: 5, remaining_dollars: 95 },
+  }, 'claude');
+  assert.deepEqual(quota.windows.map((window) => window.key), ['five_hour', 'seven_day', 'cloud_session_credits']);
+  assert.equal(quota.windows.some((window) => window.label.includes('Fable')), false);
+});
+
+test('Claude 旧版 Fable 字段和被动 7d_oi 对应同一个独立窗口', () => {
+  for (const key of ['seven_day_overage_included', 'iguana_necktie']) {
+    const quota = parseActiveQuota({ [key]: { utilization: 35 } }, 'claude');
+    assert.equal(quota.windows[0].key, 'seven_day_fable');
+    assert.equal(quota.windows[0].remaining, 65);
+  }
+  const quota = parsePassiveQuota({ provider: 'claude', quota: { signals: {
+    'Anthropic-Ratelimit-Unified-7d-Utilization': '0.2',
+    'Anthropic-Ratelimit-Unified-7d_oi-Utilization': '0.35',
+  } } });
+  assert.deepEqual(quota.windows.map((window) => window.key), ['seven_day', 'seven_day_fable']);
+  assert.equal(quota.windows[1].label, 'Fable 5 · 7 天窗口');
+});
+
+test('Claude 部分被动快照只更新有效窗口，保留其余额度及原始采集时间', () => {
+  const cached = parseActiveQuota({
+    five_hour: { utilization: 10 }, seven_day: { utilization: 20, resets_at: '2026-10-30T01:59:00Z' },
+    iguana_necktie: { utilization: 30 },
+  }, 'claude');
+  cached.observedAt = '2026-10-26T01:00:00Z';
+  const account = { provider: 'claude', quota: { observed_at: '2026-10-26T02:00:00Z', signals: {
+    'Anthropic-Ratelimit-Unified-5h-Utilization': '0.21',
+    'Anthropic-Ratelimit-Unified-7d-Utilization': 'invalid',
+  } } };
+  assert.equal(shouldInvalidateActiveQuota(account, { quota: cached }), true);
+  const merged = mergePassiveQuota(account, cached);
+  assert.deepEqual(merged.windows.map((window) => window.remaining), [79, 80, 70]);
+  assert.equal(merged.observedAt, account.quota.observed_at);
+  assert.equal(merged.windows[0].observedAt, undefined);
+  assert.equal(merged.windows[1].observedAt, cached.observedAt);
+  assert.equal(merged.windows[1].resetAt, cached.windows[1].resetAt);
+  assert.equal(merged.windows[2].observedAt, cached.observedAt);
+  assert.equal(cached.windows[0].remaining, 90);
+
+  const reloaded = JSON.parse(JSON.stringify(merged));
+  const next = mergePassiveQuota({ provider: 'claude', quota: { observed_at: '2026-10-26T03:00:00Z', signals: {
+    'Anthropic-Ratelimit-Unified-7d_oi-Utilization': '0.4',
+  } } }, reloaded);
+  assert.deepEqual(next.windows.map((window) => window.remaining), [79, 80, 60]);
+  assert.equal(next.windows[0].observedAt, account.quota.observed_at);
+  assert.equal(next.windows[1].observedAt, cached.observedAt);
+  assert.equal(next.windows[2].observedAt, undefined);
+});
+
+test('Claude 已保存的旧窗口键与新被动窗口合并时不重复', () => {
+  for (const fableKey of ['7d_oi', 'iguana_necktie']) {
+    const cached = { observedAt: '2026-10-26T01:00:00Z', windows: [
+      { key: '5h', label: '5 小时窗口', remaining: 90, invalidPercent: false },
+      { key: '7d', label: '7 天窗口', remaining: 80, invalidPercent: false },
+      { key: fableKey, label: '7 天窗口 · 含额外用量', remaining: 70, invalidPercent: false },
+    ] };
+    const merged = mergePassiveQuota({ provider: 'claude', quota: { observed_at: '2026-10-26T02:00:00Z', signals: {
+      'Anthropic-Ratelimit-Unified-5h-Utilization': '0.2',
+      'Anthropic-Ratelimit-Unified-7d_oi-Utilization': '0.4',
+    } } }, cached);
+    assert.deepEqual(merged.windows.map((window) => window.key), ['five_hour', 'seven_day', 'seven_day_fable']);
+    assert.deepEqual(merged.windows.map((window) => window.remaining), [80, 80, 60]);
+  }
 });
 
 test('Claude 被动 utilization 为比例，主动 utilization 为百分比', () => {

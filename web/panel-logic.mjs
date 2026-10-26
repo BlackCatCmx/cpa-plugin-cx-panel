@@ -20,7 +20,8 @@ export function accountProvider(account) {
 }
 
 export function selectQuotaAccounts(payload) {
-  const files = Array.isArray(payload?.files) ? payload.files : [];
+  if (!Array.isArray(payload?.files)) throw new Error('账号列表响应格式无效');
+  const files = payload.files;
   return files.filter((file) => {
     const provider = accountProvider(file);
     return ['codex', 'claude'].includes(provider) && String(file?.auth_index ?? '').trim() !== '';
@@ -213,9 +214,9 @@ export function shouldInvalidateActiveQuota(account, active) {
   if (!account) return true;
   if (account.disabled) return false;
   const passive = parsePassiveQuota(account);
-  if (accountProvider(account) === 'claude' && !passive.windows.some((window) => !window.invalidPercent)) return false;
-  const passiveObservedAt = passive.observedAt;
-  return Boolean(passiveObservedAt && active?.passiveObservedAt !== passiveObservedAt);
+  if (!passive.windows.some((window) => !window.invalidPercent)) return false;
+  const cachedAt = active?.quota?.observedAt;
+  return Boolean(passive.observedAt && (!cachedAt || Date.parse(passive.observedAt) > Date.parse(cachedAt)));
 }
 
 function first(object, ...keys) {

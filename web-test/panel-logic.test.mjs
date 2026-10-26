@@ -43,6 +43,13 @@ test('同邮箱的不同 auth_index 不会合并', () => {
   assert.deepEqual(result.map((item) => item.auth_index), ['1', '2']);
 });
 
+test('异常账号响应不能被当作空列表，合法空列表仍可返回', () => {
+  for (const payload of [null, {}, { files: null }, { files: {} }]) {
+    assert.throws(() => selectQuotaAccounts(payload), /账号列表响应格式无效/);
+  }
+  assert.deepEqual(selectQuotaAccounts({ files: [] }), []);
+});
+
 test('凭证状态切换同时使用文件名和 auth_index', () => {
   assert.deepEqual(
     buildStatusToggleRequest({ name: 'codex-user.json', auth_index: 'index-1', disabled: false }),
@@ -153,8 +160,8 @@ test('解析被动额度和动态额度窗口', () => {
 });
 
 test('停用账号保留主动额度直到启用后出现新被动快照', () => {
-  const active = { passiveObservedAt: '2026-09-01T00:00:00Z' };
-  const changedQuota = { observed_at: '2026-09-02T00:00:00Z', signals: {} };
+  const active = { quota: { observedAt: '2026-09-01T00:00:00Z' } };
+  const changedQuota = { observed_at: '2026-09-02T00:00:00Z', signals: { 'X-Codex-Primary-Used-Percent': '20' } };
   assert.equal(shouldInvalidateActiveQuota({ disabled: true, quota: changedQuota }, active), false);
   assert.equal(shouldInvalidateActiveQuota({ disabled: false, quota: changedQuota }, active), true);
   assert.equal(shouldInvalidateActiveQuota(null, active), true);
@@ -312,8 +319,8 @@ test('Claude 被动 utilization 为比例，主动 utilization 为百分比', ()
   const quota = parsePassiveQuota(account);
   assert.deepEqual(quota.windows.map((window) => window.remaining), [88, 100]);
   assert.equal(quota.windows[0].resetAt, 1791201600000);
-  assert.equal(shouldInvalidateActiveQuota(account, { passiveObservedAt: null }), true);
-  assert.equal(shouldInvalidateActiveQuota(account, { passiveObservedAt: account.quota.observed_at }), false);
+  assert.equal(shouldInvalidateActiveQuota(account, undefined), true);
+  assert.equal(shouldInvalidateActiveQuota(account, { quota: { observedAt: account.quota.observed_at } }), false);
 });
 
 test('Claude 被动只有状态或无效用量时保留主动缓存', () => {
@@ -322,9 +329,30 @@ test('Claude 被动只有状态或无效用量时保留主动缓存', () => {
     'Anthropic-Ratelimit-Unified-5h-Utilization': '',
   } } };
   assert.equal(parsePassiveQuota(account).windows[0].invalidPercent, true);
-  assert.equal(shouldInvalidateActiveQuota(account, { passiveObservedAt: null }), false);
+  assert.equal(shouldInvalidateActiveQuota(account, { quota: { observedAt: '2026-10-04T00:00:00Z' } }), false);
   assert.equal(parseActiveQuota({ five_hour: { utilization: null } }, 'claude').windows[0].invalidPercent, true);
 });
+
+for (const [provider, signal, used] of [
+  ['claude', 'Anthropic-Ratelimit-Unified-5h-Utilization', '0.2'],
+  ['codex', 'X-Codex-Primary-Used-Percent', '20'],
+]) {
+  test(`${provider} 只有更新且有效的被动用量才能替换已保存额度`, () => {
+    const cached = { quota: { observedAt: '2026-10-05T01:00:00Z' } };
+    const account = { provider, quota: {
+      observed_at: '2026-10-05T02:00:00Z', signals: { [signal]: used },
+    } };
+    assert.equal(shouldInvalidateActiveQuota(account, undefined), true);
+    assert.equal(shouldInvalidateActiveQuota(account, cached), true);
+    for (const observed_at of ['2026-10-05T00:00:00Z', cached.quota.observedAt]) {
+      assert.equal(shouldInvalidateActiveQuota({ ...account, quota: { ...account.quota, observed_at } }, cached), false);
+    }
+    for (const signals of [{}, { 'Retry-After': '60' }, { [signal]: '-1' }, { [signal]: 'invalid' }]) {
+      assert.equal(shouldInvalidateActiveQuota({ ...account, quota: { ...account.quota, signals } }, cached), false);
+    }
+    assert.equal(shouldInvalidateActiveQuota({ provider, quota: {} }, cached), false);
+  });
+}
 
 test('Claude 真实超额用量显示剩余零，负数仍为无效', () => {
   const passive = parsePassiveQuota({ provider: 'claude', quota: { signals: {

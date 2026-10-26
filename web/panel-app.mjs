@@ -113,7 +113,10 @@ async function managementFetch(path, options = {}, timeout = 15_000) {
         ...options.headers,
       },
     });
-    const body = await response.json().catch(() => null);
+    const body = await response.json().catch((error) => {
+      if (response.ok) throw error;
+      return null;
+    });
     if (!response.ok) {
       const message = typeof body?.error === 'string' ? body.error : typeof body?.message === 'string' ? body.message : `HTTP ${response.status}`;
       throw new Error(message);
@@ -121,6 +124,7 @@ async function managementFetch(path, options = {}, timeout = 15_000) {
     return body;
   } catch (error) {
     if (error?.name === 'AbortError') throw new Error('请求超时');
+    if (error instanceof SyntaxError) throw new Error('CPA 响应不是有效 JSON');
     throw error;
   } finally {
     window.clearTimeout(timer);
@@ -184,14 +188,22 @@ function saveActiveQuota() {
 function reconcileActiveQuota() {
   const accounts = new Map(state.accounts.map((account) => [String(account.auth_index), account]));
   let changed = false;
-  for (const [key, active] of state.activeQuota) {
-    const account = accounts.get(key);
-    if (!account || (active.quota && shouldInvalidateActiveQuota(account, active))) {
-      if (account && accountProvider(account) === 'claude' && (active.profile || active.profileError)) {
-        state.activeQuota.set(key, { profile: active.profile, profileError: active.profileError });
-      } else state.activeQuota.delete(key);
+  for (const key of state.activeQuota.keys()) {
+    if (!accounts.has(key)) {
+      state.activeQuota.delete(key);
       changed = true;
     }
+  }
+  for (const [key, account] of accounts) {
+    const active = state.activeQuota.get(key);
+    if (!shouldInvalidateActiveQuota(account, active)) continue;
+    state.activeQuota.set(key, {
+      quota: parsePassiveQuota(account),
+      source: 'passive',
+      profile: active?.profile,
+      profileError: active?.profileError,
+    });
+    changed = true;
   }
   if (changed) saveActiveQuota();
 }
@@ -315,7 +327,8 @@ function renderCard(account) {
     meta.append(item);
   }
   {
-    const source = state.activeQuota.get(key)?.quota ? '主动缓存' : '被动采集';
+    const cached = state.activeQuota.get(key);
+    const source = cached?.quota ? cached.source === 'passive' ? '上次被动采集' : '主动缓存' : '被动采集';
     const updatedAt = formatUTC8DateTime(quota.observedAt);
     const item = createElement('span', 'account-meta-item');
     item.append(createElement('span', 'account-meta-label', updatedAt ? source : '额度更新'),
@@ -407,7 +420,6 @@ async function toggleAccountStatus(account) {
       const quota = displayedQuota(account);
       state.activeQuota.set(key, {
         ...state.activeQuota.get(key),
-        passiveObservedAt: account?.quota?.observed_at ?? null,
         quota: buildQuotaSnapshot(account, quota),
       });
       saveActiveQuota();
@@ -485,7 +497,8 @@ async function refreshAccount(account) {
         if (quota.resetCreditsAvailableCount === null) quota.resetCreditsError = error.message;
       }
     }
-    state.activeQuota.set(key, { passiveObservedAt: account?.quota?.observed_at ?? null, quota, profile, profileError });
+    state.activeQuota.set(key, { quota, profile, profileError });
+    reconcileActiveQuota();
     saveActiveQuota();
   } catch (error) {
     state.activeErrors.set(key, error.message);

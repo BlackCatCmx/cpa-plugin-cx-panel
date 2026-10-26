@@ -25,14 +25,16 @@ import {
   validateUserAgent,
 } from '../web/panel-logic.mjs';
 
-test('只选择带 auth_index 的 Codex 和 Claude 账号', () => {
+test('只选择带 auth_index 的 Codex 和 Claude 账号，Claude 在前且同类保留原顺序', () => {
   const result = selectQuotaAccounts({ files: [
     { provider: 'codex', auth_index: '1' },
     { type: 'claude', auth_index: '2' },
+    { provider: 'codex', auth_index: '4' },
+    { type: 'claude', auth_index: '5' },
     { provider: 'codex' },
     { provider: 'gemini', auth_index: '3' },
   ] });
-  assert.deepEqual(result.map((item) => item.auth_index), ['1', '2']);
+  assert.deepEqual(result.map((item) => item.auth_index), ['2', '5', '1', '4']);
 });
 
 test('同邮箱的不同 auth_index 不会合并', () => {

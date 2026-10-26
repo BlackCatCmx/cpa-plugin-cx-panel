@@ -25,7 +25,7 @@ export function selectQuotaAccounts(payload) {
   return files.filter((file) => {
     const provider = accountProvider(file);
     return ['codex', 'claude'].includes(provider) && String(file?.auth_index ?? '').trim() !== '';
-  });
+  }).sort((a, b) => Number(accountProvider(b) === 'claude') - Number(accountProvider(a) === 'claude'));
 }
 
 export function accountPage(accounts, requestedPage) {

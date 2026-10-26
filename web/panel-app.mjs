@@ -341,7 +341,7 @@ function renderCard(account) {
   if (profileError) card.append(createElement('div', 'account-error', `套餐资料获取失败：${profileError}`));
   const list = createElement('div', 'quota-list');
   if (quota.windows.length) quota.windows.forEach((windowData) => list.append(renderWindow(windowData)));
-  else list.append(createElement('div', 'account-empty', isClaude ? '暂无额度数据，点击刷新或等待业务请求采集' : '暂无额度数据'));
+  else list.append(createElement('div', 'account-empty', '暂无额度数据'));
   card.append(list);
   return card;
 }

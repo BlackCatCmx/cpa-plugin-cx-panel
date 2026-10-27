@@ -14,6 +14,7 @@ import {
   formatRelativeDateTime,
   formatReset,
   formatUTC8DateTime,
+  mergeClaudeQuota,
   mergePassiveQuota,
   parseActiveQuota,
   parseClaudeProfile,
@@ -496,6 +497,13 @@ async function refreshAccount(account) {
       } catch (error) {
         if (quota.resetCreditsAvailableCount === null) quota.resetCreditsError = error.message;
       }
+    }
+    if (accountProvider(account) === 'claude') {
+      const cached = displayedQuota(account);
+      quota.windows = mergeClaudeQuota(quota, {
+        ...cached,
+        windows: cached.windows.filter((window) => window.key !== 'extra_usage'),
+      }).windows;
     }
     state.activeQuota.set(key, { quota, profile, profileError });
     reconcileActiveQuota();

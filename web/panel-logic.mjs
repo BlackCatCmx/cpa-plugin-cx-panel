@@ -224,7 +224,11 @@ export function shouldInvalidateActiveQuota(account, active) {
 
 export function mergePassiveQuota(account, cached) {
   const passive = parsePassiveQuota(account);
-  if (accountProvider(account) !== 'claude' || !cached) return passive;
+  return accountProvider(account) === 'claude' ? mergeClaudeQuota(passive, cached) : passive;
+}
+
+export function mergeClaudeQuota(quota, cached) {
+  if (!cached) return quota;
   const previousKeys = { '5h': 'five_hour', '7d': 'seven_day', '7d_oi': 'seven_day_fable', iguana_necktie: 'seven_day_fable' };
   const windows = new Map(cached.windows.map((window) => {
     const key = previousKeys[window.key] ?? window.key;
@@ -233,10 +237,10 @@ export function mergePassiveQuota(account, cached) {
       observedAt: window.observedAt ?? cached.observedAt,
     }];
   }));
-  for (const window of passive.windows) {
+  for (const window of quota.windows) {
     if (!window.invalidPercent || !windows.has(window.key)) windows.set(window.key, window);
   }
-  return { ...cached, ...passive, windows: [...windows.values()] };
+  return { ...cached, ...quota, windows: [...windows.values()] };
 }
 
 function first(object, ...keys) {

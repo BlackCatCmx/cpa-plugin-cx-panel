@@ -12,6 +12,7 @@ import {
   dateTimeTone,
   formatRelativeDateTime,
   formatUTC8DateTime,
+  mergeClaudeQuota,
   mergePassiveQuota,
   parseActiveQuota,
   parseClaudeProfile,
@@ -385,6 +386,58 @@ test('Claude 部分被动快照只更新有效窗口，保留其余额度及原�
   assert.equal(next.windows[0].observedAt, account.quota.observed_at);
   assert.equal(next.windows[1].observedAt, cached.observedAt);
   assert.equal(next.windows[2].observedAt, undefined);
+});
+
+test('Claude 部分主动结果保留通用周额度及原始采集时间，完整结果更新全部窗口', () => {
+  const cached = parseActiveQuota({
+    five_hour: { utilization: 10 },
+    seven_day: { utilization: 20, resets_at: '2026-10-30T01:59:00Z' },
+    seven_day_overage_included: { utilization: 30 },
+  }, 'claude');
+  cached.observedAt = '2026-10-26T01:00:00Z';
+  const partial = parseActiveQuota({
+    five_hour: { utilization: 0 },
+    seven_day: null,
+    seven_day_overage_included: { utilization: 8 },
+  }, 'claude');
+  partial.observedAt = '2026-10-26T02:00:00Z';
+  const merged = mergeClaudeQuota(partial, cached);
+  assert.deepEqual(merged.windows.map((window) => window.key), ['five_hour', 'seven_day', 'seven_day_fable']);
+  assert.deepEqual(merged.windows.map((window) => window.remaining), [100, 80, 92]);
+  assert.equal(merged.observedAt, partial.observedAt);
+  assert.equal(merged.windows[0].observedAt, undefined);
+  assert.equal(merged.windows[1].observedAt, cached.observedAt);
+  assert.equal(merged.windows[1].resetAt, cached.windows[1].resetAt);
+  assert.equal(merged.windows[2].observedAt, undefined);
+
+  const reloaded = JSON.parse(JSON.stringify(merged));
+  const repeated = mergeClaudeQuota(partial, reloaded);
+  assert.equal(repeated.windows[1].observedAt, cached.observedAt);
+  const complete = parseActiveQuota({
+    five_hour: { utilization: 15 }, seven_day: { utilization: 25 },
+    seven_day_overage_included: { utilization: 35 },
+  }, 'claude');
+  const updated = mergeClaudeQuota(complete, repeated);
+  assert.deepEqual(updated.windows.map((window) => window.remaining), [85, 75, 65]);
+  assert.equal(updated.windows.some((window) => window.observedAt), false);
+  assert.equal(cached.windows[0].remaining, 90);
+});
+
+test('Claude 首次主动刷新保留当前被动周额度，无效主动数值不覆盖有效额度', () => {
+  const passive = parsePassiveQuota({ provider: 'claude', quota: {
+    observed_at: '2026-10-26T01:00:00Z', signals: {
+      'Anthropic-Ratelimit-Unified-7d-Utilization': '0.2',
+    },
+  } });
+  const active = parseActiveQuota({
+    five_hour: { utilization: 0 }, seven_day: { utilization: null },
+    seven_day_overage_included: { utilization: 8 },
+  }, 'claude');
+  const merged = mergeClaudeQuota(active, passive);
+  const weekly = merged.windows.find((window) => window.key === 'seven_day');
+  assert.equal(weekly.remaining, 80);
+  assert.equal(weekly.observedAt, passive.observedAt);
+  assert.deepEqual(mergeClaudeQuota(active, undefined), active);
 });
 
 test('Claude 已保存的旧窗口键与新被动窗口合并时不重复', () => {

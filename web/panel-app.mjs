@@ -37,6 +37,7 @@ const state = {
   accounts: [],
   activeQuota: new Map(),
   activeErrors: new Map(),
+  refreshLog: null,
   refreshing: new Set(),
   statusUpdating: new Set(),
   filter: 'all',
@@ -251,6 +252,30 @@ function effectiveStatus(account) {
   return status;
 }
 
+function renderRefreshLog(log) {
+  const details = createElement('details', 'refresh-log');
+  details.open = log.open;
+  details.addEventListener('toggle', () => { log.open = details.open; });
+  details.append(createElement('summary', '', '本次刷新原始响应'));
+  details.append(createElement('div', 'refresh-log-note', '全页仅保留最近一次主动刷新，重新打开页面后清除。'));
+  for (const entry of log.entries) {
+    const lines = [
+      `请求时间：${formatUTC8DateTime(entry.requestedAt)}`,
+      `${entry.request.method} ${entry.request.url}`,
+      `请求头：\n${JSON.stringify(entry.request.header, null, 2)}`,
+    ];
+    if (entry.response) {
+      lines.push(`上游状态码：${entry.response.status_code}`,
+        `响应头：\n${JSON.stringify(entry.response.header, null, 2)}`,
+        `RAW Body：\n${typeof entry.response.body === 'string' ? entry.response.body : JSON.stringify(entry.response.body, null, 2)}`);
+    }
+    if (entry.error) lines.push(`请求失败：${entry.error}`);
+    details.append(createElement('pre', '', lines.join('\n\n')));
+  }
+  if (log.error) details.append(createElement('div', 'account-error', log.error));
+  return details;
+}
+
 function renderCard(account) {
   const key = String(account.auth_index);
   const quota = displayedQuota(account);
@@ -344,6 +369,7 @@ function renderCard(account) {
   card.append(list);
   const updatedAt = formatUTC8DateTime(quota.observedAt);
   card.append(createElement('div', 'quota-observed-at', updatedAt ? `额度采集于 ${updatedAt}` : '额度更新：等待数据'));
+  if (state.refreshLog?.key === key) card.append(renderRefreshLog(state.refreshLog));
   return card;
 }
 
@@ -436,17 +462,36 @@ async function toggleAccountStatus(account) {
   }
 }
 
+async function refreshFetch(log, request, timeout) {
+  const entry = {
+    requestedAt: new Date().toISOString(),
+    request: { method: request.method, url: request.url,
+      header: Object.fromEntries(Object.entries(request.header).filter(([name]) => name.toLowerCase() !== 'authorization')) },
+  };
+  log.entries.push(entry);
+  try {
+    const response = await managementFetch('/api-call', { method: 'POST', body: JSON.stringify(request) }, timeout);
+    entry.response = response;
+    return response;
+  } catch (error) {
+    entry.error = error.message;
+    throw error;
+  }
+}
+
 async function refreshAccount(account) {
   const key = String(account.auth_index);
   if (state.refreshing.has(key)) return;
   state.refreshing.add(key);
   state.activeErrors.delete(key);
+  const log = { key, entries: [], open: false };
+  state.refreshLog = log;
   render();
   try {
     const request = buildRefreshRequest(account, accountProvider(account) === 'claude' ? state.claudeUserAgent : state.userAgent);
     let response;
     try {
-      response = await managementFetch('/api-call', { method: 'POST', body: JSON.stringify(request) }, 65_000);
+      response = await refreshFetch(log, request, 65_000);
     } catch (error) {
       throw new Error(`CPA 代发失败：${error.message}`);
     }
@@ -463,9 +508,7 @@ async function refreshAccount(account) {
     let profileError;
     if (accountProvider(account) === 'claude') {
       try {
-        const profileResponse = await managementFetch('/api-call', {
-          method: 'POST', body: JSON.stringify(buildClaudeProfileRequest(account, state.claudeUserAgent)),
-        }, 65_000);
+        const profileResponse = await refreshFetch(log, buildClaudeProfileRequest(account, state.claudeUserAgent), 65_000);
         const profileStatus = Number(profileResponse?.status_code);
         if (!Number.isInteger(profileStatus) || profileStatus < 200 || profileStatus >= 300) {
           throw new Error(safeUpstreamError(profileResponse));
@@ -480,10 +523,7 @@ async function refreshAccount(account) {
     }
     if (accountProvider(account) !== 'claude') {
       try {
-        const resetResponse = await managementFetch('/api-call', {
-          method: 'POST',
-          body: JSON.stringify(buildResetCreditsRequest(account, state.userAgent)),
-        });
+        const resetResponse = await refreshFetch(log, buildResetCreditsRequest(account, state.userAgent));
         const resetStatus = Number(resetResponse?.status_code);
         if (!Number.isInteger(resetStatus) || resetStatus < 200 || resetStatus >= 300) {
           throw new Error(safeUpstreamError(resetResponse));
@@ -510,6 +550,7 @@ async function refreshAccount(account) {
     saveActiveQuota();
   } catch (error) {
     state.activeErrors.set(key, error.message);
+    log.error = error.message;
   } finally {
     state.refreshing.delete(key);
     render();

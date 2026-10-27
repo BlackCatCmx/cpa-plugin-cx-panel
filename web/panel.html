@@ -113,6 +113,11 @@
     .account-error::before { content:"!"; display:inline-grid; place-items:center; flex:0 0 auto; width:14px; height:14px; border:1.5px solid currentColor; border-radius:50%; font:800 9px/1 var(--sans); }
     .quota-list { display:flex; flex-direction:column; gap:12px; }
     .quota-observed-at { color:var(--text-3); font-size:10.5px; line-height:1.4; }
+    .refresh-log { min-width:0; border-top:1px solid var(--border); padding-top:9px; }
+    .refresh-log summary { color:var(--text-2); cursor:pointer; font-size:11px; }
+    .refresh-log-note { margin-top:8px; color:var(--text-3); font-size:10.5px; }
+    .refresh-log pre { max-height:360px; overflow:auto; margin:8px 0 0; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-page); color:var(--text-2); font:10.5px/1.6 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; }
+    .refresh-log .account-error { margin-top:8px; }
     .quota-top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:6px; }
     .quota-label { overflow:hidden; color:var(--text-2); font-size:12px; font-weight:650; text-overflow:ellipsis; white-space:nowrap; }
     .quota-value { display:flex; align-items:baseline; gap:7px; flex:0 0 auto; color:var(--text); font:750 11.5px var(--mono); }

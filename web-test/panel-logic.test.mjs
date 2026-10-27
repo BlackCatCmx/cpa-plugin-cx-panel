@@ -440,6 +440,43 @@ test('Claude 首次主动刷新保留当前被动周额度，无效主动数值�
   assert.deepEqual(mergeClaudeQuota(active, undefined), active);
 });
 
+test('Claude 较早的被动快照补齐缺失周窗口，同时保留较新的主动额度', () => {
+  const cached = parseActiveQuota({
+    five_hour: { utilization: 30 }, seven_day_overage_included: { utilization: 8 },
+  }, 'claude');
+  cached.observedAt = '2026-10-27T11:01:00Z';
+  const account = { provider: 'claude', quota: { observed_at: '2026-10-27T11:00:00Z', signals: {
+    'Anthropic-Ratelimit-Unified-5h-Utilization': '0.4',
+    'Anthropic-Ratelimit-Unified-7d-Utilization': '0.13',
+  } } };
+  assert.equal(shouldInvalidateActiveQuota(account, { quota: cached }), true);
+  const merged = mergePassiveQuota(account, cached);
+  const windows = new Map(merged.windows.map((window) => [window.key, window]));
+  assert.equal(windows.get('five_hour').remaining, 70);
+  assert.equal(windows.get('five_hour').observedAt, cached.observedAt);
+  assert.equal(windows.get('seven_day').remaining, 87);
+  assert.equal(windows.get('seven_day_fable').remaining, 92);
+  assert.equal(shouldInvalidateActiveQuota(account, { quota: merged }), false);
+});
+
+test('Claude 按窗口采集时间更新周额度，整卡较新的时间不阻挡旧窗口更新', () => {
+  const cached = parseActiveQuota({ five_hour: { utilization: 30 } }, 'claude');
+  cached.observedAt = '2026-10-27T11:02:00Z';
+  cached.windows.push({ key: 'seven_day', label: '7 天窗口', remaining: 90,
+    invalidPercent: false, observedAt: '2026-10-27T11:00:00Z' });
+  const account = { provider: 'claude', quota: { observed_at: '2026-10-27T11:01:00Z', signals: {
+    'Anthropic-Ratelimit-Unified-5h-Utilization': '0.4',
+    'Anthropic-Ratelimit-Unified-7d-Utilization': '0.13',
+  } } };
+  assert.equal(shouldInvalidateActiveQuota(account, { quota: cached }), true);
+  const merged = mergePassiveQuota(account, cached);
+  assert.deepEqual(merged.windows.map((window) => window.remaining), [70, 87]);
+  assert.equal(merged.windows[0].observedAt, cached.observedAt);
+  assert.equal(merged.windows[1].observedAt, undefined);
+  assert.equal(shouldInvalidateActiveQuota(account, { quota: merged }), false);
+  assert.equal(shouldInvalidateActiveQuota({ ...account, disabled: true }, { quota: cached }), false);
+});
+
 test('Claude 已保存的旧窗口键与新被动窗口合并时不重复', () => {
   for (const fableKey of ['7d_oi', 'iguana_necktie']) {
     const cached = { observedAt: '2026-10-26T01:00:00Z', windows: [
@@ -470,7 +507,7 @@ test('Claude 被动 utilization 为比例，主动 utilization 为百分比', ()
   assert.deepEqual(quota.windows.map((window) => window.remaining), [88, 100]);
   assert.equal(quota.windows[0].resetAt, 1791201600000);
   assert.equal(shouldInvalidateActiveQuota(account, undefined), true);
-  assert.equal(shouldInvalidateActiveQuota(account, { quota: { observedAt: account.quota.observed_at } }), false);
+  assert.equal(shouldInvalidateActiveQuota(account, { quota }), false);
 });
 
 test('Claude 被动只有状态或无效用量时保留主动缓存', () => {
@@ -488,10 +525,10 @@ for (const [provider, signal, used] of [
   ['codex', 'X-Codex-Primary-Used-Percent', '20'],
 ]) {
   test(`${provider} 只有更新且有效的被动用量才能替换已保存额度`, () => {
-    const cached = { quota: { observedAt: '2026-10-05T01:00:00Z' } };
     const account = { provider, quota: {
       observed_at: '2026-10-05T02:00:00Z', signals: { [signal]: used },
     } };
+    const cached = { quota: { ...parsePassiveQuota(account), observedAt: '2026-10-05T01:00:00Z' } };
     assert.equal(shouldInvalidateActiveQuota(account, undefined), true);
     assert.equal(shouldInvalidateActiveQuota(account, cached), true);
     for (const observed_at of ['2026-10-05T00:00:00Z', cached.quota.observedAt]) {

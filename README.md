@@ -14,6 +14,8 @@ CPA CX Panel 是 CLIProxyAPI 的原生 Codex / Claude 额度面板插件，直�
 
 刷新请求设置支持分别保存 Codex 和 Claude 的 User-Agent。Codex 留空时继承 CPA 设置，再使用内置默认值；Claude 留空时使用内置默认值 `claude-cli/2.1.280 (external, cli)`。设置只影响插件额度刷新。
 
+主动刷新后可展开账号卡片中的“本次刷新原始响应”，查看请求 UA、上游状态码、响应头及原始正文。全页仅保留最近一次记录，存放在页面内存中，下次刷新替换，重新打开页面后清除。
+
 ## 安装要求
 
 - 支持原生插件 ABI v1 和插件商店的 CLIProxyAPI 版本；

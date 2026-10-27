@@ -213,13 +213,31 @@ export function parsePassiveQuota(account) {
   return { planType: accountPlan(account), observedAt: account?.quota?.observed_at ?? null, windows };
 }
 
+const previousClaudeWindowKeys = {
+  '5h': 'five_hour', '7d': 'seven_day', '7d_oi': 'seven_day_fable', iguana_necktie: 'seven_day_fable',
+};
+
+function shouldUpdateClaudeWindow(window, observedAt, previous, cachedAt) {
+  if (!previous) return true;
+  if (window.invalidPercent) return false;
+  const previousAt = previous.observedAt ?? cachedAt;
+  return previous.invalidPercent || !previousAt || Date.parse(observedAt) > Date.parse(previousAt);
+}
+
 export function shouldInvalidateActiveQuota(account, active) {
   if (!account) return true;
   if (account.disabled) return false;
   const passive = parsePassiveQuota(account);
   if (!passive.windows.some((window) => !window.invalidPercent)) return false;
   const cachedAt = active?.quota?.observedAt;
-  return Boolean(passive.observedAt && (!cachedAt || Date.parse(passive.observedAt) > Date.parse(cachedAt)));
+  if (!passive.observedAt) return false;
+  if (accountProvider(account) === 'claude') {
+    const cachedWindows = new Map((active?.quota?.windows ?? []).map((window) =>
+      [previousClaudeWindowKeys[window.key] ?? window.key, window]));
+    return passive.windows.some((window) => !window.invalidPercent
+      && shouldUpdateClaudeWindow(window, passive.observedAt, cachedWindows.get(window.key), cachedAt));
+  }
+  return !cachedAt || Date.parse(passive.observedAt) > Date.parse(cachedAt);
 }
 
 export function mergePassiveQuota(account, cached) {
@@ -229,16 +247,17 @@ export function mergePassiveQuota(account, cached) {
 
 export function mergeClaudeQuota(quota, cached) {
   if (!cached) return quota;
-  const previousKeys = { '5h': 'five_hour', '7d': 'seven_day', '7d_oi': 'seven_day_fable', iguana_necktie: 'seven_day_fable' };
   const windows = new Map(cached.windows.map((window) => {
-    const key = previousKeys[window.key] ?? window.key;
+    const key = previousClaudeWindowKeys[window.key] ?? window.key;
     return [key, { ...window, key,
       label: key === 'seven_day_fable' ? 'Fable 5 · 7 天窗口' : window.label,
       observedAt: window.observedAt ?? cached.observedAt,
     }];
   }));
   for (const window of quota.windows) {
-    if (!window.invalidPercent || !windows.has(window.key)) windows.set(window.key, window);
+    if (shouldUpdateClaudeWindow(window, quota.observedAt, windows.get(window.key), cached.observedAt)) {
+      windows.set(window.key, window);
+    }
   }
   return { ...cached, ...quota, windows: [...windows.values()] };
 }

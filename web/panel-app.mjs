@@ -26,7 +26,9 @@ import {
   resolveRefreshUserAgent,
   safeUpstreamError,
   selectQuotaAccounts,
+  shouldInvalidateAccountCache,
   shouldInvalidateActiveQuota,
+  shouldRefreshClaudeProfile,
   validateUserAgent,
 } from './panel-logic.mjs';
 
@@ -34,13 +36,13 @@ const SESSION_KEY = 'cli-proxy-auth';
 const SESSION_PREFIX = 'enc::v1::';
 const ACTIVE_QUOTA_KEY = 'cpa-cx-panel-active-quota-v1';
 const POLL_INTERVAL = 30_000;
-const CLAUDE_PROFILE_TTL = 24 * 60 * 60 * 1000;
 const state = {
   accounts: [],
   activeQuota: new Map(),
   activeErrors: new Map(),
   refreshLog: null,
   refreshing: new Set(),
+  profileRefreshing: new Set(),
   statusUpdating: new Set(),
   filter: 'all',
   page: 1,
@@ -203,9 +205,17 @@ function reconcileActiveQuota() {
     }
   }
   for (const [key, account] of accounts) {
-    const active = state.activeQuota.get(key);
+    let active = state.activeQuota.get(key);
+    if (shouldInvalidateAccountCache(account, active)) {
+      state.activeQuota.delete(key);
+      state.activeErrors.delete(key);
+      if (state.refreshLog?.key === key) state.refreshLog = null;
+      active = undefined;
+      changed = true;
+    }
     if (!shouldInvalidateActiveQuota(account, active)) continue;
     state.activeQuota.set(key, {
+      accountEmail: account.email,
       quota: mergePassiveQuota(account, active?.quota),
       source: 'passive',
       profile: active?.profile,
@@ -292,7 +302,17 @@ function renderCard(account) {
   const head = createElement('div', 'account-head');
   const identity = createElement('div', 'identity');
   identity.append(createElement('span', 'plan neutral', isClaude ? 'Claude' : 'Codex'));
-  identity.append(createElement('span', `plan ${plan.tone}`, isClaude && !quota.planType ? '未知套餐' : plan.label));
+  const planBadge = createElement(isClaude ? 'button' : 'span', `plan ${plan.tone}`,
+    state.profileRefreshing.has(key) ? '刷新中' : isClaude && !quota.planType ? '未知套餐' : plan.label);
+  if (isClaude) {
+    planBadge.type = 'button';
+    planBadge.classList.add('plan-refresh');
+    planBadge.title = account.disabled ? '已停用账号不能刷新套餐资料' : '点击刷新套餐资料';
+    planBadge.setAttribute('aria-label', `刷新 ${accountTitle(account)} 的套餐资料`);
+    planBadge.disabled = Boolean(account.disabled) || state.refreshing.has(key) || state.statusUpdating.has(key);
+    planBadge.addEventListener('click', () => refreshClaudeProfile(account));
+  }
+  identity.append(planBadge);
   const name = createElement('div', 'account-name', accountTitle(account));
   name.title = accountTitle(account);
   identity.append(name);
@@ -453,6 +473,7 @@ async function toggleAccountStatus(account) {
       const quota = displayedQuota(account);
       state.activeQuota.set(key, {
         ...state.activeQuota.get(key),
+        accountEmail: account.email,
         quota: buildQuotaSnapshot(account, quota),
       });
       saveActiveQuota();
@@ -485,6 +506,53 @@ async function refreshFetch(log, request, timeout) {
   }
 }
 
+function checkAccountIdentity(account) {
+  const current = state.accounts.find((item) => String(item.auth_index) === String(account.auth_index));
+  if (!current || shouldInvalidateAccountCache(current, { accountEmail: account.email })) {
+    throw new Error('账号已变化，请重新刷新');
+  }
+}
+
+async function fetchClaudeProfile(account, log) {
+  const response = await refreshFetch(log, buildClaudeProfileRequest(account, state.claudeProfileUserAgent), 65_000);
+  const status = Number(response?.status_code);
+  if (!Number.isInteger(status) || status < 200 || status >= 300) throw new Error(safeUpstreamError(response));
+  let payload;
+  try { payload = typeof response.body === 'string' ? JSON.parse(response.body) : response.body; }
+  catch { throw new Error('Claude 资料响应不是有效 JSON'); }
+  return parseClaudeProfile(payload);
+}
+
+async function refreshClaudeProfile(account) {
+  const key = String(account.auth_index);
+  if (state.refreshing.has(key)) return;
+  state.refreshing.add(key);
+  state.profileRefreshing.add(key);
+  showBanner('');
+  const log = { key, entries: [], open: false };
+  state.refreshLog = log;
+  render();
+  try {
+    let profile;
+    let profileError;
+    try { profile = await fetchClaudeProfile(account, log); }
+    catch (error) { profileError = error.message; log.error = error.message; }
+    checkAccountIdentity(account);
+    state.activeQuota.set(key, {
+      ...state.activeQuota.get(key), accountEmail: account.email,
+      ...(profile ? { profile, profileFetchedAt: Date.now() } : {}), profileError,
+    });
+    saveActiveQuota();
+  } catch (error) {
+    log.error = error.message;
+    showBanner(`刷新套餐资料失败：${error.message}`);
+  } finally {
+    state.profileRefreshing.delete(key);
+    state.refreshing.delete(key);
+    render();
+  }
+}
+
 async function refreshAccount(account) {
   const key = String(account.auth_index);
   if (state.refreshing.has(key)) return;
@@ -513,20 +581,13 @@ async function refreshAccount(account) {
     const cachedProfile = state.activeQuota.get(key);
     let profile = cachedProfile?.profile;
     let profileFetchedAt = cachedProfile?.profileFetchedAt;
-    let profileError;
+    let profileError = cachedProfile?.profileError;
     if (accountProvider(account) === 'claude'
-      && (!profile || !Number.isFinite(profileFetchedAt) || Date.now() - profileFetchedAt >= CLAUDE_PROFILE_TTL)) {
+      && shouldRefreshClaudeProfile(profile, profileFetchedAt)) {
       try {
-        const profileResponse = await refreshFetch(log, buildClaudeProfileRequest(account, state.claudeProfileUserAgent), 65_000);
-        const profileStatus = Number(profileResponse?.status_code);
-        if (!Number.isInteger(profileStatus) || profileStatus < 200 || profileStatus >= 300) {
-          throw new Error(safeUpstreamError(profileResponse));
-        }
-        let profilePayload;
-        try { profilePayload = typeof profileResponse.body === 'string' ? JSON.parse(profileResponse.body) : profileResponse.body; }
-        catch { throw new Error('Claude 资料响应不是有效 JSON'); }
-        profile = parseClaudeProfile(profilePayload);
+        profile = await fetchClaudeProfile(account, log);
         profileFetchedAt = Date.now();
+        profileError = undefined;
       } catch (error) {
         profileError = error.message;
       }
@@ -555,7 +616,8 @@ async function refreshAccount(account) {
         windows: cached.windows.filter((window) => window.key !== 'extra_usage'),
       }).windows;
     }
-    state.activeQuota.set(key, { quota, profile, profileFetchedAt, profileError });
+    checkAccountIdentity(account);
+    state.activeQuota.set(key, { accountEmail: account.email, quota, profile, profileFetchedAt, profileError });
     reconcileActiveQuota();
     saveActiveQuota();
   } catch (error) {

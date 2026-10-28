@@ -24,7 +24,9 @@ import {
   resolveRefreshUserAgent,
   safeUpstreamError,
   selectQuotaAccounts,
+  shouldInvalidateAccountCache,
   shouldInvalidateActiveQuota,
+  shouldRefreshClaudeProfile,
   validateUserAgent,
 } from '../web/panel-logic.mjs';
 
@@ -241,6 +243,25 @@ test('Claude 一个版本号生成额度和资料 UA，留空恢复默认版本'
 test('Claude 版本设置拒绝完整 UA 和不完整版本号', () => {
   assert.throws(() => resolveClaudeUserAgents({ claude_client_version: 'claude-cli/2.1.311 (external, cli)' }), /版本号格式/);
   assert.throws(() => resolveClaudeUserAgents({ claude_client_version: '2.1' }), /版本号格式/);
+});
+
+test('Claude 资料缺失、无成功时间或已满 24 小时才需要重新获取', () => {
+  const now = Date.parse('2026-10-28T12:00:00Z');
+  const day = 24 * 60 * 60 * 1000;
+  const profile = { planType: 'Pro' };
+  assert.equal(shouldRefreshClaudeProfile(undefined, now, now), true);
+  assert.equal(shouldRefreshClaudeProfile(profile, undefined, now), true);
+  assert.equal(shouldRefreshClaudeProfile(profile, now - day + 1, now), false);
+  assert.equal(shouldRefreshClaudeProfile(profile, now - day, now), true);
+});
+
+test('同索引账号邮箱变化时清除旧缓存，邮箱大小写和首尾空格不影响身份', () => {
+  const cached = { accountEmail: 'old@example.com', quota: { windows: [] }, profile: { planType: 'Pro' } };
+  assert.equal(shouldInvalidateAccountCache({ email: 'new@example.com' }, cached), true);
+  assert.equal(shouldInvalidateAccountCache({ email: ' OLD@example.com ' }, cached), false);
+  assert.equal(shouldInvalidateAccountCache({ email: 'new@example.com' }, undefined), false);
+  assert.equal(shouldInvalidateAccountCache({ email: 'new@example.com' }, { profile: cached.profile }), true);
+  assert.equal(shouldInvalidateAccountCache({}, { quota: cached.quota }), false);
 });
 
 test('Claude 主动刷新使用 OAuth usage 与专属请求头', () => {

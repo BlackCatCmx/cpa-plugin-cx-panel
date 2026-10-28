@@ -19,6 +19,15 @@ export function accountProvider(account) {
   return firstText(account?.provider, account?.type).toLowerCase();
 }
 
+export function shouldInvalidateAccountCache(account, cached) {
+  return Boolean(cached)
+    && firstText(account?.email).toLowerCase() !== firstText(cached.accountEmail).toLowerCase();
+}
+
+export function shouldRefreshClaudeProfile(profile, fetchedAt, now = Date.now()) {
+  return !profile || !Number.isFinite(fetchedAt) || now - fetchedAt >= 24 * 60 * 60 * 1000;
+}
+
 export function selectQuotaAccounts(payload) {
   if (!Array.isArray(payload?.files)) throw new Error('账号列表响应格式无效');
   const files = payload.files;

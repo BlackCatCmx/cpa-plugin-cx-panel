@@ -75,6 +75,9 @@
     .account-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
     .identity { display:flex; align-items:center; gap:10px; min-width:0; }
     .plan { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; height:24px; padding:2px 9px; border:1px solid var(--border); border-radius:999px; background:var(--bg-soft); color:var(--text-2); box-shadow:0 1px 2px rgba(0,0,0,.06); font-size:10.5px; font-weight:750; line-height:1; letter-spacing:.025em; }
+    .plan-refresh { cursor:pointer; }
+    .plan-refresh:hover:not(:disabled) { filter:brightness(1.08); border-color:var(--text-2); }
+    .plan-refresh:disabled { cursor:default; opacity:.65; }
     .plan.plus { border-color:rgba(16,185,129,.38); background:linear-gradient(135deg,#ecfdf5,#a7f3d0); color:#087653; }
     .plan.pro { border-color:rgba(217,165,22,.72); background:radial-gradient(circle at 18% 24%,#fff 0%,rgba(255,255,255,.3) 35%,transparent 43%),linear-gradient(135deg,#fff9e3 0%,#ffe07f 52%,#e0aa14 100%); color:#6b4b00; box-shadow:0 0 13px rgba(255,214,98,.25); }
     .plan.team { border-color:rgba(139,92,246,.38); background:linear-gradient(135deg,#f5f3ff,#c4b5fd); color:#6740bd; }

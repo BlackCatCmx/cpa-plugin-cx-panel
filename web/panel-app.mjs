@@ -508,7 +508,8 @@ async function refreshAccount(account) {
     let profileError;
     if (accountProvider(account) === 'claude') {
       try {
-        const profileResponse = await refreshFetch(log, buildClaudeProfileRequest(account, state.claudeUserAgent), 65_000);
+        const profileUserAgent = String(state.pluginConfig?.claude_refresh_user_agent ?? '').trim() || undefined;
+        const profileResponse = await refreshFetch(log, buildClaudeProfileRequest(account, profileUserAgent), 65_000);
         const profileStatus = Number(profileResponse?.status_code);
         if (!Number.isInteger(profileStatus) || profileStatus < 200 || profileStatus >= 300) {
           throw new Error(safeUpstreamError(profileResponse));

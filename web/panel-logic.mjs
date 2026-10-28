@@ -1,7 +1,7 @@
 export const DEFAULT_CODEX_USER_AGENT =
   'codex-tui/0.146.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10 (codex-tui; 0.146.0)';
 
-export const DEFAULT_CLAUDE_USER_AGENT = 'claude-cli/2.1.280 (external, cli)';
+export const DEFAULT_CLAUDE_USER_AGENT = 'claude-cli/2.1.295 (external, cli)';
 
 const quotaKeyPattern = /^x-codex-(?:(.+)-)?(primary|secondary)-used-percent$/;
 
@@ -400,6 +400,7 @@ export function buildRefreshRequest(account, userAgent) {
       url: 'https://api.anthropic.com/api/oauth/usage',
       header: {
         Authorization: 'Bearer $TOKEN$',
+        Accept: 'application/json, text/plain, */*',
         'Content-Type': 'application/json',
         'User-Agent': userAgent,
         'anthropic-beta': 'oauth-2025-04-20',
@@ -435,8 +436,12 @@ export function buildResetCreditsRequest(account, userAgent) {
   };
 }
 
-export function buildClaudeProfileRequest(account, userAgent) {
-  return { ...buildRefreshRequest(account, userAgent), url: 'https://api.anthropic.com/api/oauth/profile' };
+export function buildClaudeProfileRequest(account, userAgent = 'claude-code/2.1.295') {
+  const request = buildRefreshRequest(account, userAgent);
+  request.url = 'https://api.anthropic.com/api/oauth/profile';
+  delete request.header['anthropic-beta'];
+  request.header['Cache-Control'] = 'no-cache';
+  return request;
 }
 
 export function safeUpstreamError(response) {

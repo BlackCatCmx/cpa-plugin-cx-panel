@@ -228,7 +228,7 @@ test('Claude UA 使用独立插件设置，留空恢复硬编码默认值', () =
   const config = { refresh_user_agent: 'codex-custom', claude_refresh_user_agent: ' claude-custom ' };
   assert.deepEqual(resolveRefreshUserAgent(config, {}, 'claude'), { value: 'claude-custom', source: '插件设置' });
   assert.deepEqual(resolveRefreshUserAgent({ ...config, claude_refresh_user_agent: ' ' }, {}, 'claude'), {
-    value: 'claude-cli/2.1.280 (external, cli)', source: '内置默认值',
+    value: 'claude-cli/2.1.295 (external, cli)', source: '内置默认值',
   });
   assert.equal(resolveRefreshUserAgent(config, {}).value, 'codex-custom');
 });
@@ -237,6 +237,7 @@ test('Claude 主动刷新使用 OAuth usage 与专属请求头', () => {
   const request = buildRefreshRequest({ type: 'claude', auth_index: '9' }, 'claude-custom');
   assert.equal(request.url, 'https://api.anthropic.com/api/oauth/usage');
   assert.equal(request.header.Authorization, 'Bearer $TOKEN$');
+  assert.equal(request.header.Accept, 'application/json, text/plain, */*');
   assert.equal(request.header['anthropic-beta'], 'oauth-2025-04-20');
   assert.equal(request.header['User-Agent'], 'claude-custom');
   assert.equal(request.header['Chatgpt-Account-Id'], undefined);
@@ -244,11 +245,15 @@ test('Claude 主动刷新使用 OAuth usage 与专属请求头', () => {
 });
 
 test('Claude 资料请求复用凭证索引和独立 UA，无需凭证自带套餐字段', () => {
+  const defaultRequest = buildClaudeProfileRequest({ type: 'claude', auth_index: '9' });
+  assert.equal(defaultRequest.header['User-Agent'], 'claude-code/2.1.295');
   const request = buildClaudeProfileRequest({ type: 'claude', auth_index: '9' }, 'claude-custom');
   assert.equal(request.url, 'https://api.anthropic.com/api/oauth/profile');
   assert.equal(request.header.Authorization, 'Bearer $TOKEN$');
+  assert.equal(request.header.Accept, 'application/json, text/plain, */*');
   assert.equal(request.header['User-Agent'], 'claude-custom');
-  assert.equal(request.header['anthropic-beta'], 'oauth-2025-04-20');
+  assert.equal(request.header['anthropic-beta'], undefined);
+  assert.equal(request.header['Cache-Control'], 'no-cache');
 });
 
 test('Claude 资料区分 Max 倍数，并读取真实订阅开通时间和状态', () => {

@@ -20,6 +20,7 @@ import {
   parseResetCreditsAvailableCount,
   planInfo,
   quotaTone,
+  resolveClaudeUserAgents,
   resolveRefreshUserAgent,
   safeUpstreamError,
   selectQuotaAccounts,
@@ -224,34 +225,46 @@ test('构造固定的主动刷新请求', () => {
   assert.equal(request.header['User-Agent'], 'test-ua');
 });
 
-test('Claude UA 使用独立插件设置，留空恢复硬编码默认值', () => {
-  const config = { refresh_user_agent: 'codex-custom', claude_refresh_user_agent: ' claude-custom ' };
-  assert.deepEqual(resolveRefreshUserAgent(config, {}, 'claude'), { value: 'claude-custom', source: '插件设置' });
-  assert.deepEqual(resolveRefreshUserAgent({ ...config, claude_refresh_user_agent: ' ' }, {}, 'claude'), {
-    value: 'claude-cli/2.1.295 (external, cli)', source: '内置默认值',
+test('Claude 一个版本号生成额度和资料 UA，留空恢复默认版本', () => {
+  const config = { refresh_user_agent: 'codex-custom', claude_client_version: ' 2.1.311 ' };
+  assert.deepEqual(resolveClaudeUserAgents(config), {
+    version: '2.1.311', usage: 'claude-cli/2.1.311 (external, cli)',
+    profile: 'claude-code/2.1.311', source: '插件设置',
+  });
+  assert.deepEqual(resolveClaudeUserAgents({ claude_client_version: ' ' }), {
+    version: '2.1.295', usage: 'claude-cli/2.1.295 (external, cli)',
+    profile: 'claude-code/2.1.295', source: '内置默认值',
   });
   assert.equal(resolveRefreshUserAgent(config, {}).value, 'codex-custom');
 });
 
+test('Claude 版本设置拒绝完整 UA 和不完整版本号', () => {
+  assert.throws(() => resolveClaudeUserAgents({ claude_client_version: 'claude-cli/2.1.311 (external, cli)' }), /版本号格式/);
+  assert.throws(() => resolveClaudeUserAgents({ claude_client_version: '2.1' }), /版本号格式/);
+});
+
 test('Claude 主动刷新使用 OAuth usage 与专属请求头', () => {
-  const request = buildRefreshRequest({ type: 'claude', auth_index: '9' }, 'claude-custom');
+  const agents = resolveClaudeUserAgents({ claude_client_version: '2.1.311' });
+  const request = buildRefreshRequest({ type: 'claude', auth_index: '9' }, agents.usage);
   assert.equal(request.url, 'https://api.anthropic.com/api/oauth/usage');
   assert.equal(request.header.Authorization, 'Bearer $TOKEN$');
   assert.equal(request.header.Accept, 'application/json, text/plain, */*');
   assert.equal(request.header['anthropic-beta'], 'oauth-2025-04-20');
-  assert.equal(request.header['User-Agent'], 'claude-custom');
+  assert.equal(request.header['User-Agent'], 'claude-cli/2.1.311 (external, cli)');
   assert.equal(request.header['Chatgpt-Account-Id'], undefined);
   assert.throws(() => buildRefreshRequest({ type: 'claude', auth_index: '9' }, 'bad\r\nua'), /控制字符/);
 });
 
 test('Claude 资料请求复用凭证索引和独立 UA，无需凭证自带套餐字段', () => {
-  const defaultRequest = buildClaudeProfileRequest({ type: 'claude', auth_index: '9' });
+  const defaults = resolveClaudeUserAgents({});
+  const defaultRequest = buildClaudeProfileRequest({ type: 'claude', auth_index: '9' }, defaults.profile);
   assert.equal(defaultRequest.header['User-Agent'], 'claude-code/2.1.295');
-  const request = buildClaudeProfileRequest({ type: 'claude', auth_index: '9' }, 'claude-custom');
+  const agents = resolveClaudeUserAgents({ claude_client_version: '2.1.311' });
+  const request = buildClaudeProfileRequest({ type: 'claude', auth_index: '9' }, agents.profile);
   assert.equal(request.url, 'https://api.anthropic.com/api/oauth/profile');
   assert.equal(request.header.Authorization, 'Bearer $TOKEN$');
   assert.equal(request.header.Accept, 'application/json, text/plain, */*');
-  assert.equal(request.header['User-Agent'], 'claude-custom');
+  assert.equal(request.header['User-Agent'], 'claude-code/2.1.311');
   assert.equal(request.header['anthropic-beta'], undefined);
   assert.equal(request.header['Cache-Control'], 'no-cache');
 });

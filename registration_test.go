@@ -20,7 +20,11 @@ func TestPluginRegistration(t *testing.T) {
 	var result struct {
 		SchemaVersion uint32 `json:"schema_version"`
 		Metadata      struct {
-			Name string `json:"Name"`
+			Name         string `json:"Name"`
+			ConfigFields []struct {
+				Name string `json:"Name"`
+				Type string `json:"Type"`
+			} `json:"ConfigFields"`
 		} `json:"metadata"`
 		Capabilities map[string]bool `json:"capabilities"`
 	}
@@ -29,6 +33,13 @@ func TestPluginRegistration(t *testing.T) {
 	}
 	if result.SchemaVersion != 1 || result.Metadata.Name != pluginName || !result.Capabilities["management_api"] {
 		t.Fatalf("unexpected registration: %#v", result)
+	}
+	fields := make(map[string]string)
+	for _, field := range result.Metadata.ConfigFields {
+		fields[field.Name] = field.Type
+	}
+	if fields["refresh_user_agent"] != "string" || fields["claude_client_version"] != "string" {
+		t.Fatalf("unexpected config fields: %#v", fields)
 	}
 }
 

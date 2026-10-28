@@ -21,10 +21,10 @@ func pluginRegistration() any {
 				"EnumValues":  []string{},
 				"Description": "User-Agent used for manual Codex quota refreshes. Empty inherits the CPA Codex default.",
 			}, {
-				"Name":        "claude_refresh_user_agent",
+				"Name":        "claude_client_version",
 				"Type":        "string",
 				"EnumValues":  []string{},
-				"Description": "User-Agent used for manual Claude quota refreshes. Empty uses the built-in Claude CLI default.",
+				"Description": "Claude client version used to generate quota and profile User-Agents, for example 2.1.295. Empty uses the built-in version.",
 			}},
 		},
 		Capabilities: map[string]any{"management_api": true},

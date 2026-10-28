@@ -22,6 +22,7 @@ import {
   parseResetCreditsAvailableCount,
   planInfo,
   quotaTone,
+  resolveClaudeUserAgents,
   resolveRefreshUserAgent,
   safeUpstreamError,
   selectQuotaAccounts,
@@ -48,6 +49,7 @@ const state = {
   cpaConfig: {},
   userAgent: '',
   claudeUserAgent: '',
+  claudeProfileUserAgent: '',
 };
 
 const elements = {
@@ -69,11 +71,13 @@ const elements = {
   uaMessage: document.querySelector('#ua-message'),
   uaSave: document.querySelector('#ua-save'),
   uaReset: document.querySelector('#ua-reset'),
-  claudeUaInput: document.querySelector('#claude-ua-input'),
-  claudeUaSource: document.querySelector('#claude-ua-source'),
-  claudeUaMessage: document.querySelector('#claude-ua-message'),
-  claudeUaSave: document.querySelector('#claude-ua-save'),
-  claudeUaReset: document.querySelector('#claude-ua-reset'),
+  claudeVersionInput: document.querySelector('#claude-version-input'),
+  claudeVersionSource: document.querySelector('#claude-version-source'),
+  claudeVersionMessage: document.querySelector('#claude-version-message'),
+  claudeVersionSave: document.querySelector('#claude-version-save'),
+  claudeVersionReset: document.querySelector('#claude-version-reset'),
+  claudeUsageUa: document.querySelector('#claude-usage-ua'),
+  claudeProfileUa: document.querySelector('#claude-profile-ua'),
 };
 
 function decodeBase64(value) {
@@ -508,8 +512,7 @@ async function refreshAccount(account) {
     let profileError;
     if (accountProvider(account) === 'claude') {
       try {
-        const profileUserAgent = String(state.pluginConfig?.claude_refresh_user_agent ?? '').trim() || undefined;
-        const profileResponse = await refreshFetch(log, buildClaudeProfileRequest(account, profileUserAgent), 65_000);
+        const profileResponse = await refreshFetch(log, buildClaudeProfileRequest(account, state.claudeProfileUserAgent), 65_000);
         const profileStatus = Number(profileResponse?.status_code);
         if (!Number.isInteger(profileStatus) || profileStatus < 200 || profileStatus >= 300) {
           throw new Error(safeUpstreamError(profileResponse));
@@ -564,19 +567,22 @@ function applyUserAgent() {
   elements.uaInput.value = String(state.pluginConfig?.refresh_user_agent ?? '');
   elements.uaInput.placeholder = resolved.value;
   elements.uaSource.textContent = `当前使用：${resolved.source}`;
-  const claude = resolveRefreshUserAgent(state.pluginConfig, state.cpaConfig, 'claude');
-  state.claudeUserAgent = claude.value;
-  elements.claudeUaInput.value = String(state.pluginConfig?.claude_refresh_user_agent ?? '');
-  elements.claudeUaInput.placeholder = claude.value;
-  elements.claudeUaSource.textContent = `当前使用：${claude.source}`;
+  const claude = resolveClaudeUserAgents(state.pluginConfig);
+  state.claudeUserAgent = claude.usage;
+  state.claudeProfileUserAgent = claude.profile;
+  elements.claudeVersionInput.value = String(state.pluginConfig?.claude_client_version ?? '');
+  elements.claudeVersionInput.placeholder = claude.version;
+  elements.claudeVersionSource.textContent = `当前使用：${claude.source}`;
+  elements.claudeUsageUa.textContent = claude.usage;
+  elements.claudeProfileUa.textContent = claude.profile;
 }
 
-async function saveUserAgent(value, provider = 'codex') {
-  const field = provider === 'claude' ? 'claude_refresh_user_agent' : 'refresh_user_agent';
-  const message = provider === 'claude' ? elements.claudeUaMessage : elements.uaMessage;
+async function saveRefreshSetting(value, field = 'refresh_user_agent') {
+  const message = field === 'claude_client_version' ? elements.claudeVersionMessage : elements.uaMessage;
   message.textContent = '';
   try {
-    validateUserAgent(value);
+    if (field === 'claude_client_version') resolveClaudeUserAgents({ claude_client_version: value });
+    else validateUserAgent(value);
     await managementFetch(`/plugins/${pluginID}/config`, {
       method: 'PATCH',
       body: JSON.stringify({ [field]: value }),
@@ -600,10 +606,10 @@ elements.tabs.addEventListener('click', (event) => {
   render();
 });
 
-elements.uaSave.addEventListener('click', () => saveUserAgent(elements.uaInput.value.trim()));
-elements.uaReset.addEventListener('click', () => saveUserAgent(''));
-elements.claudeUaSave.addEventListener('click', () => saveUserAgent(elements.claudeUaInput.value.trim(), 'claude'));
-elements.claudeUaReset.addEventListener('click', () => saveUserAgent('', 'claude'));
+elements.uaSave.addEventListener('click', () => saveRefreshSetting(elements.uaInput.value.trim()));
+elements.uaReset.addEventListener('click', () => saveRefreshSetting(''));
+elements.claudeVersionSave.addEventListener('click', () => saveRefreshSetting(elements.claudeVersionInput.value.trim(), 'claude_client_version'));
+elements.claudeVersionReset.addEventListener('click', () => saveRefreshSetting('', 'claude_client_version'));
 elements.theme.addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';

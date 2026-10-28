@@ -1,7 +1,7 @@
 export const DEFAULT_CODEX_USER_AGENT =
   'codex-tui/0.146.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10 (codex-tui; 0.146.0)';
 
-export const DEFAULT_CLAUDE_USER_AGENT = 'claude-cli/2.1.295 (external, cli)';
+const DEFAULT_CLAUDE_VERSION = '2.1.295';
 
 const quotaKeyPattern = /^x-codex-(?:(.+)-)?(primary|secondary)-used-percent$/;
 
@@ -371,17 +371,24 @@ export function parseResetCreditsAvailableCount(payload) {
   }).length;
 }
 
-export function resolveRefreshUserAgent(pluginConfig, cpaConfig, provider = 'codex') {
-  if (provider === 'claude') {
-    const configured = String(pluginConfig?.claude_refresh_user_agent ?? '').trim();
-    return configured ? { value: configured, source: '插件设置' }
-      : { value: DEFAULT_CLAUDE_USER_AGENT, source: '内置默认值' };
-  }
+export function resolveRefreshUserAgent(pluginConfig, cpaConfig) {
   const configured = String(pluginConfig?.refresh_user_agent ?? '').trim();
   if (configured) return { value: configured, source: '插件设置' };
   const inherited = String(cpaConfig?.['codex-header-defaults']?.['user-agent'] ?? '').trim();
   if (inherited) return { value: inherited, source: 'CPA 配置' };
   return { value: DEFAULT_CODEX_USER_AGENT, source: 'CPA 默认值' };
+}
+
+export function resolveClaudeUserAgents(pluginConfig) {
+  const configured = String(pluginConfig?.claude_client_version ?? '').trim();
+  const version = configured || DEFAULT_CLAUDE_VERSION;
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Claude 版本号格式应为 2.1.295');
+  return {
+    version,
+    usage: `claude-cli/${version} (external, cli)`,
+    profile: `claude-code/${version}`,
+    source: configured ? '插件设置' : '内置默认值',
+  };
 }
 
 export function validateUserAgent(value) {
@@ -436,7 +443,7 @@ export function buildResetCreditsRequest(account, userAgent) {
   };
 }
 
-export function buildClaudeProfileRequest(account, userAgent = 'claude-code/2.1.295') {
+export function buildClaudeProfileRequest(account, userAgent) {
   const request = buildRefreshRequest(account, userAgent);
   request.url = 'https://api.anthropic.com/api/oauth/profile';
   delete request.header['anthropic-beta'];

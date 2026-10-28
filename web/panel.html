@@ -62,6 +62,8 @@
     .button:hover { border-color:var(--border-hover); background:var(--bg-soft); color:var(--text); }
     .button.primary { background:var(--text); border-color:var(--text); color:var(--bg-page); }
     .setting-message { min-height:16px; align-self:center; color:var(--text-3); font-size:11px; }
+    .ua-preview { grid-column:2/-1; color:var(--text-3); font-size:11px; line-height:1.7; overflow-wrap:anywhere; }
+    .ua-preview code { color:var(--text-2); font-family:var(--mono); }
     .workbench-head { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:13px; }
     .tabs { display:flex; gap:5px; padding:3px; border:1px solid var(--border); border-radius:10px; background:color-mix(in srgb,var(--bg-card) 65%,transparent); }
     .tab { padding:6px 11px; border:0; border-radius:7px; background:transparent; color:var(--text-3); cursor:pointer; font-size:11.5px; font-weight:650; white-space:nowrap; }
@@ -137,7 +139,7 @@
     .pagination-status { min-width:150px; color:var(--text-3); text-align:center; font:10.5px var(--mono); }
     @keyframes spin { to { transform:rotate(360deg); } }
     @media (max-width:1100px) { .grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
-    @media (max-width:880px) { .settings{grid-template-columns:1fr}.settings-actions{justify-content:flex-end} }
+    @media (max-width:880px) { .settings{grid-template-columns:1fr}.settings-actions{justify-content:flex-end}.ua-preview{grid-column:1} }
     @media (max-width:700px) { .page{padding:20px 15px 34px}.summary{grid-template-columns:repeat(2,1fr)}.summary-item:nth-child(3){border-left:0;border-top:1px solid var(--border)}.summary-item:nth-child(4){border-top:1px solid var(--border)}.workbench-head{align-items:flex-start;flex-direction:column}.tabs{width:100%;overflow-x:auto}.grid{grid-template-columns:1fr} }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after{animation:none!important;transition:none!important} }
   </style>
@@ -164,10 +166,10 @@
         <span></span><span id="ua-message" class="setting-message"></span>
       </div>
       <div class="settings">
-        <div class="settings-title"><strong>Claude 刷新 User-Agent</strong><span>仅用于 Claude 额度刷新，留空使用内置默认值。</span></div>
-        <label><span class="field-label"><span>实际请求 UA</span><span id="claude-ua-source" class="source-tag"></span></span><input id="claude-ua-input" class="ua-input" type="text" autocomplete="off" spellcheck="false"></label>
-        <div class="settings-actions"><button id="claude-ua-reset" class="button" type="button">恢复默认</button><button id="claude-ua-save" class="button primary" type="button">保存 UA</button></div>
-        <span></span><span id="claude-ua-message" class="setting-message"></span>
+        <div class="settings-title"><strong>Claude 客户端版本</strong><span>自动生成额度和资料请求的 UA，留空使用内置版本。</span></div>
+        <label><span class="field-label"><span>版本号</span><span id="claude-version-source" class="source-tag"></span></span><input id="claude-version-input" class="ua-input" type="text" autocomplete="off" spellcheck="false"></label>
+        <div class="settings-actions"><button id="claude-version-reset" class="button" type="button">恢复默认</button><button id="claude-version-save" class="button primary" type="button">保存版本</button></div>
+        <span></span><div class="ua-preview">额度 UA：<code id="claude-usage-ua"></code><br>资料 UA：<code id="claude-profile-ua"></code><br><span id="claude-version-message" class="setting-message"></span></div>
       </div>
     </details>
     <section>

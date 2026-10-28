@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 )
 
@@ -21,6 +22,7 @@ func TestPluginRegistration(t *testing.T) {
 		SchemaVersion uint32 `json:"schema_version"`
 		Metadata      struct {
 			Name         string `json:"Name"`
+			Version      string `json:"Version"`
 			ConfigFields []struct {
 				Name string `json:"Name"`
 				Type string `json:"Type"`
@@ -33,6 +35,29 @@ func TestPluginRegistration(t *testing.T) {
 	}
 	if result.SchemaVersion != 1 || result.Metadata.Name != pluginName || !result.Capabilities["management_api"] {
 		t.Fatalf("unexpected registration: %#v", result)
+	}
+	registryRaw, err := os.ReadFile("registry.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registry struct {
+		Plugins []struct {
+			ID      string `json:"id"`
+			Version string `json:"version"`
+		} `json:"plugins"`
+	}
+	if err := json.Unmarshal(registryRaw, &registry); err != nil {
+		t.Fatal(err)
+	}
+	var expectedVersion string
+	for _, plugin := range registry.Plugins {
+		if plugin.ID == pluginID {
+			expectedVersion = plugin.Version
+			break
+		}
+	}
+	if expectedVersion == "" || result.Metadata.Version != expectedVersion {
+		t.Fatalf("registered version = %q, registry version = %q", result.Metadata.Version, expectedVersion)
 	}
 	fields := make(map[string]string)
 	for _, field := range result.Metadata.ConfigFields {

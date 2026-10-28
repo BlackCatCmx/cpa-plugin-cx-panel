@@ -34,6 +34,7 @@ const SESSION_KEY = 'cli-proxy-auth';
 const SESSION_PREFIX = 'enc::v1::';
 const ACTIVE_QUOTA_KEY = 'cpa-cx-panel-active-quota-v1';
 const POLL_INTERVAL = 30_000;
+const CLAUDE_PROFILE_TTL = 24 * 60 * 60 * 1000;
 const state = {
   accounts: [],
   activeQuota: new Map(),
@@ -208,6 +209,7 @@ function reconcileActiveQuota() {
       quota: mergePassiveQuota(account, active?.quota),
       source: 'passive',
       profile: active?.profile,
+      profileFetchedAt: active?.profileFetchedAt,
       profileError: active?.profileError,
     });
     changed = true;
@@ -508,9 +510,12 @@ async function refreshAccount(account) {
     catch { throw new Error('上游额度响应不是有效 JSON'); }
     const quota = parseActiveQuota(payload, accountProvider(account));
     if (!quota.windows.length) throw new Error('上游响应中没有可用额度窗口');
-    let profile;
+    const cachedProfile = state.activeQuota.get(key);
+    let profile = cachedProfile?.profile;
+    let profileFetchedAt = cachedProfile?.profileFetchedAt;
     let profileError;
-    if (accountProvider(account) === 'claude') {
+    if (accountProvider(account) === 'claude'
+      && (!profile || !Number.isFinite(profileFetchedAt) || Date.now() - profileFetchedAt >= CLAUDE_PROFILE_TTL)) {
       try {
         const profileResponse = await refreshFetch(log, buildClaudeProfileRequest(account, state.claudeProfileUserAgent), 65_000);
         const profileStatus = Number(profileResponse?.status_code);
@@ -521,6 +526,7 @@ async function refreshAccount(account) {
         try { profilePayload = typeof profileResponse.body === 'string' ? JSON.parse(profileResponse.body) : profileResponse.body; }
         catch { throw new Error('Claude 资料响应不是有效 JSON'); }
         profile = parseClaudeProfile(profilePayload);
+        profileFetchedAt = Date.now();
       } catch (error) {
         profileError = error.message;
       }
@@ -549,7 +555,7 @@ async function refreshAccount(account) {
         windows: cached.windows.filter((window) => window.key !== 'extra_usage'),
       }).windows;
     }
-    state.activeQuota.set(key, { quota, profile, profileError });
+    state.activeQuota.set(key, { quota, profile, profileFetchedAt, profileError });
     reconcileActiveQuota();
     saveActiveQuota();
   } catch (error) {

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import {
   accountPage,
   accountSubscriptionActiveUntil,
@@ -604,4 +606,46 @@ test('构造只读的主动重置次数请求', () => {
 test('上游错误只提取安全错误字段', () => {
   assert.equal(safeUpstreamError({ status_code: 401, body: '{"error":{"message":"unauthorized"}}' }), '上游返回 401：unauthorized');
   assert.equal(safeUpstreamError({ status_code: 500, body: '<html>secret</html>' }), '上游返回 HTTP 500');
+});
+
+const source = readFileSync(new URL('../web/panel-app.mjs', import.meta.url), 'utf8');
+const sessionCode = source.match(/^const SESSION_(?:KEY|PREFIX) = .+;$/gm).join('\n') + '\n' +
+  source.slice(source.indexOf('function decodeBase64('), source.indexOf('async function managementFetch('));
+const storedSession = 'enc::v2::GE4aWREGClpDVkMRGUQ1BBEQSwAYGxEXBQFfAlwXHxNPAh0dDgANS0sMBB4EQ0cCVggSGgILDEAVHBszHFRDSktZEhYWWAJfQ16B29iU86pRWE0ABAoAEQEVE34ECxIaHx4BDE4RAQEGEUUPBhcdCxBCD1JTHQo=';
+
+function readSession(stored, userAgent = 'Chrome/test') {
+  const location = new URL('https://cpa.example.test');
+  return runInNewContext(sessionCode + '\nreadSession();', {
+    localStorage: { getItem: () => stored },
+    location,
+    window: { location },
+    navigator: { userAgent },
+    atob,
+    TextEncoder,
+    TextDecoder,
+    URL,
+  });
+}
+
+test('读取 CPA v2 登录信息，浏览器 UA 变化后仍能读取', () => {
+  for (const ua of ['Chrome/old', 'Chrome/new']) {
+    const session = readSession(storedSession, ua);
+    assert.equal(session.baseURL, 'https://cpa.example.test');
+    assert.equal(session.managementKey, 'test-key-中文');
+  }
+});
+
+test('登录数据格式无效时明确提示版本匹配问题', () => {
+  assert.throws(() => readSession('enc::v1::retired'), /格式无效.*版本匹配/);
+  assert.throws(() => readSession('{'), /格式无效.*版本匹配/);
+});
+
+test('未登录或未保存管理密钥时明确报错', () => {
+  assert.throws(() => readSession(null), /登录/);
+  assert.throws(() => readSession(JSON.stringify({ state: { apiBase: 'https://cpa.example.test' } })), /记住/);
+});
+
+test('拒绝向其他站点发送管理密钥', () => {
+  const raw = JSON.stringify({ state: { apiBase: 'https://other.example.test', managementKey: 'test-key' } });
+  assert.throws(() => readSession(raw), /不一致|同源/);
 });

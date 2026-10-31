@@ -33,7 +33,7 @@ import {
 } from './panel-logic.mjs';
 
 const SESSION_KEY = 'cli-proxy-auth';
-const SESSION_PREFIX = 'enc::v1::';
+const SESSION_PREFIX = 'enc::v2::';
 const ACTIVE_QUOTA_KEY = 'cpa-cx-panel-active-quota-v1';
 const POLL_INTERVAL = 30_000;
 const state = {
@@ -94,12 +94,12 @@ function readSession() {
   let raw = stored;
   if (stored.startsWith(SESSION_PREFIX)) {
     const encrypted = decodeBase64(stored.slice(SESSION_PREFIX.length));
-    const key = new TextEncoder().encode(`cli-proxy-api-webui::secure-storage|${window.location.host}|${navigator.userAgent}`);
+    const key = new TextEncoder().encode(`cli-proxy-api-webui::secure-storage|${window.location.host}`);
     const plain = Uint8Array.from(encrypted, (byte, index) => byte ^ key[index % key.length]);
     raw = new TextDecoder().decode(plain);
   }
   let parsed;
-  try { parsed = JSON.parse(raw); } catch { throw new Error('CPA 管理登录信息无法读取，请重新登录'); }
+  try { parsed = JSON.parse(raw); } catch { throw new Error('CPA 管理登录信息格式无效，请确认插件与管理前端版本匹配'); }
   const session = parsed?.state ?? parsed;
   const apiBase = String(session?.apiBase ?? '').replace(/\/+$/, '');
   const managementKey = String(session?.managementKey ?? '');

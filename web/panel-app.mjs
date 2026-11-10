@@ -301,7 +301,7 @@ function renderCard(account) {
   const card = createElement('article', `account-card${account.disabled ? ' account-disabled' : ''}`);
   const head = createElement('div', 'account-head');
   const identity = createElement('div', 'identity');
-  identity.append(createElement('span', 'plan neutral', isClaude ? 'Claude' : 'Codex'));
+  identity.append(createElement('span', `plan ${isClaude ? 'claude' : 'neutral'}`, isClaude ? 'Claude' : 'Codex'));
   const planBadge = createElement(isClaude ? 'button' : 'span', `plan ${plan.tone}`,
     state.profileRefreshing.has(key) ? '刷新中' : isClaude && !quota.planType ? '未知套餐' : plan.label);
   if (isClaude) {

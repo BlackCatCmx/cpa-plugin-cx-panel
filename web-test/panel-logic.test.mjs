@@ -236,8 +236,8 @@ test('Claude 一个版本号生成额度和资料 UA，留空恢复默认版本'
     profile: 'claude-code/2.1.311', source: '插件设置',
   });
   assert.deepEqual(resolveClaudeUserAgents({ claude_client_version: ' ' }), {
-    version: '2.1.295', usage: 'claude-cli/2.1.295 (external, cli)',
-    profile: 'claude-code/2.1.295', source: '内置默认值',
+    version: '2.1.321', usage: 'claude-cli/2.1.321 (external, cli)',
+    profile: 'claude-code/2.1.321', source: '内置默认值',
   });
   assert.equal(resolveRefreshUserAgent(config, {}).value, 'codex-custom');
 });
@@ -281,7 +281,7 @@ test('Claude 主动刷新使用 OAuth usage 与专属请求头', () => {
 test('Claude 资料请求复用凭证索引和独立 UA，无需凭证自带套餐字段', () => {
   const defaults = resolveClaudeUserAgents({});
   const defaultRequest = buildClaudeProfileRequest({ type: 'claude', auth_index: '9' }, defaults.profile);
-  assert.equal(defaultRequest.header['User-Agent'], 'claude-code/2.1.295');
+  assert.equal(defaultRequest.header['User-Agent'], 'claude-code/2.1.321');
   const agents = resolveClaudeUserAgents({ claude_client_version: '2.1.311' });
   const request = buildClaudeProfileRequest({ type: 'claude', auth_index: '9' }, agents.profile);
   assert.equal(request.url, 'https://api.anthropic.com/api/oauth/profile');
@@ -349,6 +349,25 @@ test('Claude Fable 模型窗口优先使用已启用的 limits 数据', () => {
   }, 'claude');
   assert.equal(quota.windows.length, 1);
   assert.equal(quota.windows[0].remaining, 70);
+});
+
+test('Claude 2.1.321 解析 Fable 5.1、共享额度和独立额度名称', () => {
+  const reset = '2026-11-12T00:00:00Z';
+  const quota = parseActiveQuota({
+    cinder_cove: { utilization: 15, resets_at: reset },
+    wattle_ember: { label: 'Cloud credits', utilization: 25, resets_at: reset,
+      limit_dollars: 100, used_dollars: 25, remaining_dollars: 75 },
+    limits: [{ kind: 'weekly_scoped', percent: 35, is_active: true,
+      scope: { model: { display_name: 'Fable 5.1' } }, resets_at: reset }],
+  }, 'claude');
+  assert.deepEqual(quota.windows.map(({ key, label, remaining, resetAt }) => ({ key, label, remaining, resetAt })), [
+    { key: 'cinder_cove', label: 'Claude Code / Cowork 共享额度', remaining: 85, resetAt: Date.parse(reset) },
+    { key: 'wattle_ember', label: 'Cloud credits', remaining: 75, resetAt: Date.parse(reset) },
+    { key: 'seven_day_fable', label: 'Fable 5 · 7 天窗口', remaining: 65, resetAt: Date.parse(reset) },
+  ]);
+  const unnamed = parseActiveQuota({ wattle_ember: { utilization: 0 } }, 'claude');
+  assert.equal(unnamed.windows[0].label, '可用额度');
+  assert.equal(unnamed.windows[0].remaining, 100);
 });
 
 test('Claude 新版通用周额度、Fable 和带金额的云端会话额度分别解析', () => {

@@ -1,7 +1,7 @@
 export const DEFAULT_CODEX_USER_AGENT =
   'codex-tui/0.146.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10 (codex-tui; 0.146.0)';
 
-const DEFAULT_CLAUDE_VERSION = '2.1.295';
+const DEFAULT_CLAUDE_VERSION = '2.1.321';
 
 const quotaKeyPattern = /^x-codex-(?:(.+)-)?(primary|secondary)-used-percent$/;
 
@@ -310,12 +310,14 @@ export function parseActiveQuota(payload, provider = 'codex') {
   if (provider === 'claude') {
     const limits = Array.isArray(payload.limits) ? payload.limits : [];
     const fable = limits.filter((limit) =>
-      limit?.kind === 'weekly_scoped' && ['fable', 'fable 5'].includes(String(limit?.scope?.model?.display_name ?? '').toLowerCase())
+      limit?.kind === 'weekly_scoped' && ['fable', 'fable 5', 'fable 5.1'].includes(String(limit?.scope?.model?.display_name ?? '').toLowerCase())
       && limit.percent !== null && limit.percent !== undefined);
     for (const [key, label, kind] of [
       ['five_hour', '5 小时窗口', 'session'], ['seven_day', '7 天窗口', 'weekly_all'],
       ['seven_day_oauth_apps', 'OAuth 应用 · 7 天窗口'], ['seven_day_opus', 'Opus · 7 天窗口'],
       ['seven_day_sonnet', 'Sonnet · 7 天窗口'], ['seven_day_cowork', 'Cowork · 7 天窗口'],
+      ['cinder_cove', 'Claude Code / Cowork 共享额度'],
+      ['wattle_ember', firstText(payload.wattle_ember?.label) || '可用额度'],
     ]) {
       const window = payload[key];
       if (window) {
@@ -391,7 +393,7 @@ export function resolveRefreshUserAgent(pluginConfig, cpaConfig) {
 export function resolveClaudeUserAgents(pluginConfig) {
   const configured = String(pluginConfig?.claude_client_version ?? '').trim();
   const version = configured || DEFAULT_CLAUDE_VERSION;
-  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Claude 版本号格式应为 2.1.295');
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Claude 版本号格式应为 2.1.321');
   return {
     version,
     usage: `claude-cli/${version} (external, cli)`,

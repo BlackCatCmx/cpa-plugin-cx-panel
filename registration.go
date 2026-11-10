@@ -24,7 +24,7 @@ func pluginRegistration() any {
 				"Name":        "claude_client_version",
 				"Type":        "string",
 				"EnumValues":  []string{},
-				"Description": "Claude client version used to generate quota and profile User-Agents, for example 2.1.295. Empty uses the built-in version.",
+				"Description": "Claude client version used to generate quota and profile User-Agents, for example 2.1.321. Empty uses the built-in version.",
 			}},
 		},
 		Capabilities: map[string]any{"management_api": true},

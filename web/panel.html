@@ -50,12 +50,19 @@
     .settings-shell summary svg { width:15px; height:15px; }
     .settings-shell summary .chevron { margin-left:auto; transition:transform 180ms ease; }
     .settings-shell[open] summary .chevron { transform:rotate(180deg); }
-    .settings { display:grid; grid-template-columns:minmax(180px,.75fr) minmax(360px,2fr) auto; align-items:end; gap:14px; padding:14px 16px 15px; border-top:1px solid var(--border); }
-    .settings-title { align-self:center; min-width:0; }
-    .settings-title strong { display:block; margin-bottom:5px; font-size:13px; }
-    .settings-title span { display:block; color:var(--text-3); font-size:11px; line-height:1.45; }
-    .settings-toggle { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:16px; border-top:1px solid var(--border); }
-    .settings-toggle .settings-title { flex:1; }
+    .settings { display:grid; grid-template-columns:minmax(180px,.75fr) minmax(0,2fr) 180px; align-items:center; gap:10px 14px; padding:12px 16px; border-top:1px solid var(--border); }
+    .settings-title { position:relative; display:flex; align-items:center; gap:7px; min-width:0; }
+    .settings-title strong { font-size:13px; }
+    .help-button { display:grid; place-items:center; width:17px; height:17px; padding:0; border:1px solid var(--border-hover); border-radius:50%; background:transparent; color:var(--text-3); font:600 11px var(--sans); cursor:help; }
+    .help-tip { position:absolute; top:calc(100% + 8px); left:0; z-index:20; width:min(340px,calc(100vw - 64px)); padding:10px 12px; border:1px solid var(--border); border-radius:9px; background:var(--bg-float); color:var(--text-2); box-shadow:var(--shadow); font:11px/1.7 var(--sans); overflow-wrap:anywhere; visibility:hidden; }
+    .help-wrap:hover .help-tip,.help-wrap:focus-within .help-tip { visibility:visible; }
+    .help-tip code { font-family:var(--mono); }
+    .logging-control { display:flex; align-items:center; flex-wrap:wrap; gap:10px; min-height:36px; }
+    .logging-status { color:var(--text-2); font-size:11px; }
+    .logging-error { flex-basis:100%; color:var(--red); font-size:11px; }
+    .logging-error:empty { display:none; }
+    .settings-field { min-width:0; }
+    .settings-field .setting-message:empty { display:none; }
     .toggle-switch { position:relative; display:inline-flex; align-items:center; flex-shrink:0; cursor:pointer; }
     .toggle-switch input { position:absolute; width:0; height:0; opacity:0; }
     .toggle-track { position:relative; width:44px; height:24px; border-radius:999px; background:var(--border); transition:background-color 200ms ease-out; }
@@ -67,13 +74,11 @@
     .field-label { display:flex; justify-content:space-between; gap:8px; margin-bottom:6px; color:var(--text-2); font-size:11px; font-weight:650; }
     .source-tag { color:var(--text-3); font:500 10px var(--mono); }
     .ua-input { width:100%; height:36px; padding:0 11px; border:1px solid var(--border); border-radius:9px; background:var(--bg-page); color:var(--text); font:11px var(--mono); }
-    .settings-actions { display:flex; gap:8px; }
+    .settings-actions { display:flex; justify-content:flex-end; gap:8px; }
     .button { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:7px 13px; border:1px solid var(--border); border-radius:10px; background:color-mix(in srgb,var(--bg-card) 72%,transparent); color:var(--text-2); cursor:pointer; font-size:12px; font-weight:650; white-space:nowrap; }
     .button:hover { border-color:var(--border-hover); background:var(--bg-soft); color:var(--text); }
     .button.primary { background:var(--text); border-color:var(--text); color:var(--bg-page); }
     .setting-message { min-height:16px; align-self:center; color:var(--text-3); font-size:11px; }
-    .ua-preview { grid-column:2/-1; color:var(--text-3); font-size:11px; line-height:1.7; overflow-wrap:anywhere; }
-    .ua-preview code { color:var(--text-2); font-family:var(--mono); }
     .workbench-head { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:13px; }
     .tabs { display:flex; gap:5px; padding:3px; border:1px solid var(--border); border-radius:10px; background:color-mix(in srgb,var(--bg-card) 65%,transparent); }
     .tab { padding:6px 11px; border:0; border-radius:7px; background:transparent; color:var(--text-3); cursor:pointer; font-size:11.5px; font-weight:650; white-space:nowrap; }
@@ -154,7 +159,7 @@
     .pagination-status { min-width:150px; color:var(--text-3); text-align:center; font:10.5px var(--mono); }
     @keyframes spin { to { transform:rotate(360deg); } }
     @media (max-width:1100px) { .grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
-    @media (max-width:880px) { .settings{grid-template-columns:1fr}.settings-actions{justify-content:flex-end}.ua-preview{grid-column:1} }
+    @media (max-width:880px) { .settings{grid-template-columns:1fr}.settings-actions{justify-content:flex-end} }
     @media (max-width:700px) { .page{padding:20px 15px 34px}.summary{grid-template-columns:repeat(2,1fr)}.summary-item:nth-child(3){border-left:0;border-top:1px solid var(--border)}.summary-item:nth-child(4){border-top:1px solid var(--border)}.workbench-head{align-items:flex-start;flex-direction:column}.tabs{width:100%;overflow-x:auto}.grid{grid-template-columns:1fr} }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after{animation:none!important;transition:none!important} }
     .request-history { padding:8px 0 0; border:0; border-top:1px solid var(--border); background:none; color:var(--text-2); text-align:left; cursor:pointer; font-size:11px; }
@@ -218,20 +223,18 @@
     <details id="settings-details" class="settings-shell">
       <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.16.38.37.72.6 1 .3.35.69.56 1.1.6h.1v4h-.1c-.41.04-.8.25-1.1.6-.23.28-.44.62-.6 1Z"/></svg>设置<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m7 10 5 5 5-5"/></svg></summary>
       <div class="settings">
-        <div class="settings-title"><strong>Codex 刷新 User-Agent</strong><span>仅用于 Codex 额度刷新，留空继承 CPA 设置。</span></div>
-        <label><span class="field-label"><span>实际请求 UA</span><span id="ua-source" class="source-tag"></span></span><input id="ua-input" class="ua-input" type="text" autocomplete="off" spellcheck="false"></label>
+        <div class="settings-title"><strong>Codex 刷新 User-Agent</strong><span class="help-wrap"><button class="help-button" type="button" aria-label="Codex User-Agent 说明" aria-describedby="ua-help">?</button><span id="ua-help" class="help-tip" role="tooltip">仅用于 Codex 额度刷新，留空继承 CPA 设置。</span></span></div>
+        <div class="settings-field"><label><span class="field-label"><span>实际请求 UA</span><span id="ua-source" class="source-tag"></span></span><input id="ua-input" class="ua-input" type="text" autocomplete="off" spellcheck="false"></label><span id="ua-message" class="setting-message" role="status"></span></div>
         <div class="settings-actions"><button id="ua-reset" class="button" type="button">恢复继承</button><button id="ua-save" class="button primary" type="button">保存 UA</button></div>
-        <span></span><span id="ua-message" class="setting-message"></span>
       </div>
       <div class="settings">
-        <div class="settings-title"><strong>Claude 客户端版本</strong><span>自动生成额度和资料请求的 UA，留空使用内置版本。</span></div>
-        <label><span class="field-label"><span>版本号</span><span id="claude-version-source" class="source-tag"></span></span><input id="claude-version-input" class="ua-input" type="text" autocomplete="off" spellcheck="false"></label>
+        <div class="settings-title"><strong>Claude 客户端版本</strong><span class="help-wrap"><button class="help-button" type="button" aria-label="Claude 客户端版本说明" aria-describedby="claude-version-help">?</button><span id="claude-version-help" class="help-tip" role="tooltip">自动生成额度和资料请求的 UA，留空使用内置版本。<br>额度 UA：<code id="claude-usage-ua"></code><br>资料 UA：<code id="claude-profile-ua"></code></span></span></div>
+        <div class="settings-field"><label><span class="field-label"><span>版本号</span><span id="claude-version-source" class="source-tag"></span></span><input id="claude-version-input" class="ua-input" type="text" autocomplete="off" spellcheck="false"></label><span id="claude-version-message" class="setting-message" role="status"></span></div>
         <div class="settings-actions"><button id="claude-version-reset" class="button" type="button">恢复默认</button><button id="claude-version-save" class="button primary" type="button">保存版本</button></div>
-        <span></span><div class="ua-preview">额度 UA：<code id="claude-usage-ua"></code><br>资料 UA：<code id="claude-profile-ua"></code><br><span id="claude-version-message" class="setting-message"></span></div>
       </div>
-      <div class="settings-toggle">
-        <div class="settings-title"><strong>记录 Claude 请求</strong><span>记录模型与缓存用量，关闭后保留已有记录。</span><span id="request-logging-message" class="setting-message" role="status">默认关闭，日志最多约 4 MB。</span></div>
-        <label class="toggle-switch"><input id="request-logging" type="checkbox" role="switch" aria-label="记录 Claude 请求" aria-describedby="request-logging-message"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      <div class="settings">
+        <div class="settings-title"><strong>记录 Claude 请求</strong><span class="help-wrap"><button class="help-button" type="button" aria-label="Claude 请求记录说明" aria-describedby="request-logging-help">?</button><span id="request-logging-help" class="help-tip" role="tooltip">记录模型与缓存用量，关闭后保留已有记录。默认关闭，日志最多约 4 MB。</span></span></div>
+        <div class="logging-control"><label class="toggle-switch"><input id="request-logging" type="checkbox" role="switch" aria-label="记录 Claude 请求" aria-describedby="request-logging-help"><span class="toggle-track"><span class="toggle-thumb"></span></span></label><span id="request-logging-status" class="logging-status" role="status">已关闭</span><span id="request-logging-message" class="logging-error" role="alert"></span></div>
       </div>
     </details>
     <section>

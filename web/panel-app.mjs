@@ -634,6 +634,7 @@ async function refreshAccount(account) {
 
 function applyUserAgent() {
   document.querySelector('#request-logging').checked = state.pluginConfig?.claude_request_logging === true;
+  document.querySelector('#request-logging-status').textContent = state.pluginConfig?.claude_request_logging === true ? '已开启' : '已关闭';
   const resolved = resolveRefreshUserAgent(state.pluginConfig, state.cpaConfig);
   state.userAgent = resolved.value;
   elements.uaInput.value = String(state.pluginConfig?.refresh_user_agent ?? '');
@@ -672,15 +673,20 @@ const pluginID = 'cpa-plugin-cx-panel';
 document.querySelector('#request-logging').addEventListener('change', async (event) => {
   const input = event.target;
   const message = document.querySelector('#request-logging-message');
+  const status = document.querySelector('#request-logging-status');
+  message.textContent = '';
   input.disabled = true;
+  status.textContent = '保存中…';
   try {
     await managementFetch(`/plugins/${pluginID}/config`, { method: 'PATCH', body: JSON.stringify({ claude_request_logging: input.checked }) });
     state.pluginConfig.claude_request_logging = input.checked;
-    message.textContent = input.checked ? '已开启，开始记录后续请求' : '已关闭，已有日志仍可查看';
   } catch (error) {
     input.checked = state.pluginConfig?.claude_request_logging === true;
     message.textContent = `保存失败：${error.message}`;
-  } finally { input.disabled = false; }
+  } finally {
+    status.textContent = input.checked ? '已开启' : '已关闭';
+    input.disabled = false;
+  }
 });
 
 elements.tabs.addEventListener('click', (event) => {

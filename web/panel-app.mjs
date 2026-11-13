@@ -32,6 +32,8 @@ import {
   validateUserAgent,
 } from './panel-logic.mjs';
 
+import { requestHistoryButton } from './requests.mjs';
+
 const SESSION_KEY = 'cli-proxy-auth';
 const SESSION_PREFIX = 'enc::v2::';
 const ACTIVE_QUOTA_KEY = 'cpa-cx-panel-active-quota-v1';
@@ -116,7 +118,7 @@ async function managementFetch(path, options = {}, timeout = 15_000) {
   try {
     const response = await fetch(`${state.session.baseURL}/v0/management${path}`, {
       ...options,
-      signal: controller.signal,
+      signal: options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal,
       headers: {
         Authorization: `Bearer ${state.session.managementKey}`,
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
@@ -395,6 +397,7 @@ function renderCard(account) {
   card.append(list);
   const updatedAt = formatUTC8DateTime(quota.observedAt);
   card.append(createElement('div', 'quota-observed-at', updatedAt ? `额度采集于 ${updatedAt}` : '额度更新：等待数据'));
+  if (isClaude) card.append(requestHistoryButton(account, managementFetch));
   if (state.refreshLog?.key === key) card.append(renderRefreshLog(state.refreshLog));
   return card;
 }
@@ -630,6 +633,7 @@ async function refreshAccount(account) {
 }
 
 function applyUserAgent() {
+  document.querySelector('#request-logging').checked = state.pluginConfig?.claude_request_logging === true;
   const resolved = resolveRefreshUserAgent(state.pluginConfig, state.cpaConfig);
   state.userAgent = resolved.value;
   elements.uaInput.value = String(state.pluginConfig?.refresh_user_agent ?? '');
@@ -664,6 +668,20 @@ async function saveRefreshSetting(value, field = 'refresh_user_agent') {
 }
 
 const pluginID = 'cpa-plugin-cx-panel';
+
+document.querySelector('#request-logging').addEventListener('change', async (event) => {
+  const input = event.target;
+  const message = document.querySelector('#request-logging-message');
+  input.disabled = true;
+  try {
+    await managementFetch(`/plugins/${pluginID}/config`, { method: 'PATCH', body: JSON.stringify({ claude_request_logging: input.checked }) });
+    state.pluginConfig.claude_request_logging = input.checked;
+    message.textContent = input.checked ? '已开启，开始记录后续请求' : '已关闭，已有日志仍可查看';
+  } catch (error) {
+    input.checked = state.pluginConfig?.claude_request_logging === true;
+    message.textContent = `保存失败：${error.message}`;
+  } finally { input.disabled = false; }
+});
 
 elements.tabs.addEventListener('click', (event) => {
   const button = event.target.closest('[data-filter]');

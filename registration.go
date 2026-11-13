@@ -25,16 +25,21 @@ func pluginRegistration() any {
 				"Type":        "string",
 				"EnumValues":  []string{},
 				"Description": "Claude client version used to generate quota and profile User-Agents, for example 2.1.321. Empty uses the built-in version.",
+			}, {
+				"Name":        "claude_request_logging",
+				"Type":        "boolean",
+				"Description": "Record Claude request summaries to rotating JSONL files. Disabled by default; existing logs remain readable when disabled.",
 			}},
 		},
-		Capabilities: map[string]any{"management_api": true},
+		Capabilities: map[string]any{"management_api": true, "usage_plugin": claudeRequests.isEnabled()},
 	}
 }
 
 func managementRegistration() any {
 	return struct {
+		Routes    []map[string]string `json:"routes"`
 		Resources []map[string]string `json:"resources"`
-	}{Resources: []map[string]string{
+	}{Routes: []map[string]string{{"Method": "GET", "Path": requestAPIPath}}, Resources: []map[string]string{
 		{
 			"Path":        panelPath,
 			"Menu":        "Codex / Claude 额度",
@@ -42,6 +47,7 @@ func managementRegistration() any {
 		},
 		{"Path": "/panel-app.mjs"},
 		{"Path": "/panel-logic.mjs"},
+		{"Path": "/requests.mjs"},
 	}}
 }
 

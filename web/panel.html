@@ -147,6 +147,49 @@
     @media (max-width:880px) { .settings{grid-template-columns:1fr}.settings-actions{justify-content:flex-end}.ua-preview{grid-column:1} }
     @media (max-width:700px) { .page{padding:20px 15px 34px}.summary{grid-template-columns:repeat(2,1fr)}.summary-item:nth-child(3){border-left:0;border-top:1px solid var(--border)}.summary-item:nth-child(4){border-top:1px solid var(--border)}.workbench-head{align-items:flex-start;flex-direction:column}.tabs{width:100%;overflow-x:auto}.grid{grid-template-columns:1fr} }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after{animation:none!important;transition:none!important} }
+    .request-history { padding:8px 0 0; border:0; border-top:1px solid var(--border); background:none; color:var(--text-2); text-align:left; cursor:pointer; font-size:11px; }
+    .request-dialog { width:min(1100px,calc(100% - 40px)); max-height:85vh; margin:auto; padding:24px; border:1px solid var(--border); border-radius:18px; background:var(--bg-page); color:var(--text); box-shadow:0 25px 90px #0005; }
+    .request-dialog::backdrop { background:#0006; }
+    .request-head,.request-tools { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .request-head { justify-content:space-between; }
+    .request-head h2 { margin:0; font-size:18px; overflow-wrap:anywhere; }
+    .request-note,#request-message { color:var(--text-3); font-size:11px; line-height:1.7; }
+    .request-tools { margin:18px 0 12px; font-size:12px; }
+    .request-tools input[type="text"] { width:220px; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); }
+    .request-table { overflow:auto; border:1px solid var(--border); border-radius:12px; }
+    .request-row { display:grid; grid-template-columns:155px minmax(220px,1fr) 100px 100px 70px; align-items:center; gap:14px; min-width:750px; padding:14px 16px; font-size:12px; }
+    .request-labels { background:var(--bg-soft); color:var(--text-3); font-size:11px; }
+    .request-item + .request-item { border-top:1px solid var(--border); }
+    .request-item summary { cursor:pointer; list-style:none; }
+    .request-item summary::-webkit-details-marker { display:none; }
+    .request-item summary:hover { background:var(--bg-card); }
+    .request-time { color:var(--text-3); font:10px var(--mono); }
+    .request-model { display:flex; align-items:flex-start; flex-direction:column; gap:4px; overflow-wrap:anywhere; }
+    .request-model strong { font:600 12px var(--mono); }
+    .request-response { color:var(--text-3); font:11px var(--mono); }
+    .request-badge { padding:2px 6px; border-radius:5px; background:var(--red-bg); color:var(--red); font-size:10px; }
+    .request-mismatch { background:color-mix(in srgb,var(--red) 4%,var(--bg-page)); }
+    .request-tokens { font:12px var(--mono); }
+    .request-ok { color:var(--green); }
+    .request-failed { color:var(--red) !important; }
+    .request-detail { display:grid; gap:8px; padding:16px; border-top:1px dashed var(--border); color:var(--text-2); font-size:11px; overflow-wrap:anywhere; }
+    .request-detail .button { justify-self:start; }
+    .request-empty { padding:30px; color:var(--text-3); text-align:center; font-size:12px; }
+    #request-older { margin-top:12px; }
+    #request-older[hidden] { display:none; }
+    @media(max-width:600px) {
+      .request-dialog { width:100%; max-width:none; max-height:100dvh; height:100dvh; border-radius:0; padding:16px; }
+      .request-head { flex-wrap:nowrap; align-items:flex-start; }
+      .request-head h2 { flex:1; min-width:0; font-size:15px; }
+      .request-row { min-width:0; grid-template-columns:1fr 1fr; gap:10px; padding:14px; }
+      .request-labels { display:none; }
+      .request-model { grid-column:1/-1; order:2; }
+      .request-row > :nth-child(5) { order:1; text-align:right; }
+      .request-tokens { order:3; }
+      .request-tokens::before { display:block; margin-bottom:5px; color:var(--text-3); font:10px var(--sans); }
+      .request-row > :nth-child(3)::before { content:"缓存读取"; }
+      .request-row > :nth-child(4)::before { content:"缓存写入"; }
+    }
   </style>
 </head>
 <body>
@@ -177,6 +220,7 @@
         <span></span><div class="ua-preview">额度 UA：<code id="claude-usage-ua"></code><br>资料 UA：<code id="claude-profile-ua"></code><br><span id="claude-version-message" class="setting-message"></span></div>
       </div>
     </details>
+    <div class="request-tools"><label><input id="request-logging" type="checkbox"> 记录 Claude 请求</label><span id="request-logging-message" class="request-note">默认关闭 · 开启后记录缓存读写与模型名称 · 最多约 4 MB 磁盘</span></div>
     <section>
       <div class="workbench-head">
         <nav id="tabs" class="tabs" aria-label="账号筛选">
@@ -191,6 +235,19 @@
       <nav id="pagination" class="pagination" aria-label="账号分页" hidden></nav>
     </section>
   </main>
+  <dialog id="request-dialog" class="request-dialog" aria-labelledby="request-title">
+    <div class="request-head"><h2 id="request-title">Claude 请求</h2><button id="request-close" class="button" type="button" aria-label="关闭请求记录">关闭</button></div>
+    <p class="request-note">仅保存请求摘要 · 两份日志，每份约 2 MB，旧记录自动轮换 · 名称不一致不等于确认上游内部路由</p>
+    <div class="request-tools">
+      <label><input id="request-mismatch" type="checkbox"> 只看模型名称不一致</label>
+      <input id="request-session" type="text" aria-label="会话筛选" placeholder="会话 ID（留空看全部）">
+      <button id="request-refresh" class="button" type="button">刷新最新</button>
+      <button id="request-export" class="button" type="button">导出本页</button>
+    </div>
+    <p id="request-message" role="status"></p>
+    <div class="request-table"><div class="request-row request-labels"><span>时间</span><span>请求模型 / 上游返回</span><span>缓存读取</span><span>缓存写入</span><span>结果</span></div><div id="request-rows"></div></div>
+    <button id="request-older" class="button" type="button" hidden>查看更早 50 条</button>
+  </dialog>
   <script type="module" src="./panel-app.mjs"></script>
 </body>
 </html>

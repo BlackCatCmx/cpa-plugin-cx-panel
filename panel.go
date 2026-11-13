@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"mime"
 	"path"
@@ -34,7 +35,7 @@ func servePanelResource(request managementRequest) managementResponse {
 	if resourcePath == "" {
 		resourcePath = "panel.html"
 	}
-	if resourcePath != "panel.html" && resourcePath != "panel-app.mjs" && resourcePath != "panel-logic.mjs" {
+	if resourcePath != "panel.html" && resourcePath != "panel-app.mjs" && resourcePath != "panel-logic.mjs" && resourcePath != "requests.mjs" {
 		return textResponse(404, "not found")
 	}
 
@@ -54,6 +55,16 @@ func servePanelResource(request managementRequest) managementResponse {
 	}
 	headers["Content-Type"] = []string{contentType}
 	return managementResponse{StatusCode: 200, Headers: headers, Body: body}
+}
+
+func jsonResponse(status int, value any) managementResponse {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return textResponse(500, "encode response failed")
+	}
+	headers := cloneHeaders(resourceHeaders)
+	headers["Content-Type"] = []string{"application/json; charset=utf-8"}
+	return managementResponse{StatusCode: status, Headers: headers, Body: body}
 }
 
 func textResponse(status int, message string) managementResponse {

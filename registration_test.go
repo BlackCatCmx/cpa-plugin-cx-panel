@@ -78,12 +78,21 @@ func TestManagementRegistration(t *testing.T) {
 		t.Fatalf("decode envelope: %v", err)
 	}
 	var result struct {
+		Routes    []map[string]string `json:"routes"`
 		Resources []map[string]string `json:"resources"`
 	}
 	if err := json.Unmarshal(response.Result, &result); err != nil {
 		t.Fatalf("decode management registration: %v", err)
 	}
-	if len(result.Resources) != 3 || result.Resources[0]["Path"] != panelPath || result.Resources[1]["Path"] != "/panel-app.mjs" {
+	if len(result.Resources) != 4 || result.Resources[0]["Path"] != panelPath || result.Resources[1]["Path"] != "/panel-app.mjs" {
 		t.Fatalf("unexpected resources: %#v", result.Resources)
+	}
+	if len(result.Routes) != 1 || result.Routes[0]["Path"] != requestAPIPath || result.Routes[0]["Method"] != "GET" {
+		t.Fatalf("unexpected authenticated routes: %#v", result.Routes)
+	}
+	for _, resource := range result.Resources {
+		if resource["Path"] == "/requests" {
+			t.Fatal("request data exposed as a public resource")
+		}
 	}
 }

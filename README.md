@@ -6,6 +6,7 @@ CPA CX Panel 是 CLIProxyAPI 的原生 Codex / Claude 额度面板插件，直�
 
 - Codex 主额度、Code Review 额度和动态附加额度窗口；
 - Claude 5 小时、7 天、模型专属、云端会话额度及已启用的额外用量窗口；
+- Claude 套餐开通时间和凭证 `refresh_token_expires_at` 记录的授权过期时间；
 - Codex 套餐到期时间、相对时间和主动重置次数；
 - CPA 记录的账号状态及错误信息；
 - 单账号主动刷新得到的最新额度。

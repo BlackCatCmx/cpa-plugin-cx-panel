@@ -363,13 +363,13 @@ function renderCard(account) {
     createdItem.append(createElement('span', 'account-meta-label', '套餐开通'),
       createElement('span', 'account-meta-value', formatUTC8DateTime(quota.subscriptionCreatedAt) || '未知'));
     meta.append(createdItem);
-    const subscriptionStatus = quota.subscriptionStatus;
-    if (subscriptionStatus) {
-      const item = createElement('span', 'account-meta-item');
-      item.append(createElement('span', 'account-meta-label', '订阅状态'),
-        createElement('span', 'account-meta-value', subscriptionStatus === 'active' ? '有效' : subscriptionStatus));
-      meta.append(item);
-    }
+    const expiresAt = account.refresh_token_expires_at;
+    const expiryTone = dateTimeTone(expiresAt);
+    const expiryItem = createElement('span', `account-meta-item account-meta-expiry${expiryTone ? ` expiry-${expiryTone}` : ''}`);
+    expiryItem.title = account.authorizationExpiryError || '';
+    expiryItem.append(createElement('span', 'account-meta-label', '授权过期'),
+      createElement('span', 'account-meta-value', account.authorizationExpiryError ? '读取失败' : formatUTC8DateTime(expiresAt) || '未记录'));
+    meta.append(expiryItem);
     if (state.activeQuota.get(key)?.profileError) {
       const item = createElement('span', 'account-meta-item account-meta-failed');
       item.title = state.activeQuota.get(key).profileError;
@@ -391,6 +391,7 @@ function renderCard(account) {
   if (status.message) card.append(createElement('div', 'account-error', status.message));
   const profileError = state.activeQuota.get(key)?.profileError;
   if (profileError) card.append(createElement('div', 'account-error', `套餐资料获取失败：${profileError}`));
+  if (account.authorizationExpiryError) card.append(createElement('div', 'account-error', `授权过期时间读取失败：${account.authorizationExpiryError}`));
   const list = createElement('div', 'quota-list');
   if (quota.windows.length) quota.windows.forEach((windowData) => list.append(renderWindow(windowData)));
   else list.append(createElement('div', 'account-empty', '暂无额度数据'));
@@ -445,7 +446,26 @@ async function pollAccounts({ initial = false } = {}) {
   state.polling = true;
   try {
     const response = await managementFetch('/auth-files');
-    state.accounts = selectQuotaAccounts(response);
+    const previous = new Map(state.accounts.map((account) => [String(account.auth_index), account]));
+    state.accounts = await Promise.all(selectQuotaAccounts(response).map(async (account) => {
+      if (accountProvider(account) !== 'claude' || account.runtime_only || !account.name) return account;
+      const cached = previous.get(String(account.auth_index));
+      if (cached?.modtime && cached.modtime === account.modtime
+        && cached.name === account.name && cached.email === account.email
+        && cached.refresh_token_expires_at !== undefined) {
+        account.refresh_token_expires_at = cached.refresh_token_expires_at;
+        return account;
+      }
+      try {
+        const credential = await managementFetch(`/auth-files/download?name=${encodeURIComponent(account.name)}`);
+        const expiresAt = credential.refresh_token_expires_at ?? null;
+        if (expiresAt !== null && !formatUTC8DateTime(expiresAt)) throw new Error('授权过期时间格式无效');
+        account.refresh_token_expires_at = expiresAt;
+      } catch (error) {
+        account.authorizationExpiryError = error.message;
+      }
+      return account;
+    }));
     reconcileActiveQuota();
     showBanner('');
     elements.pollState.textContent = '刚刚更新';

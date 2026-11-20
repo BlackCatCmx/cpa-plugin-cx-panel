@@ -292,14 +292,13 @@ test('Claude 资料请求复用凭证索引和独立 UA，无需凭证自带套�
   assert.equal(request.header['Cache-Control'], 'no-cache');
 });
 
-test('Claude 资料区分 Max 倍数，并读取真实订阅开通时间和状态', () => {
+test('Claude 资料区分 Max 倍数，并读取真实订阅开通时间', () => {
   for (const [tier, label] of [['default_claude_max_5x', 'Max 5x'], ['default_claude_max_20x', 'Max 20x']]) {
     const result = parseClaudeProfile({ account: { has_claude_max: true }, organization: {
       rate_limit_tier: tier, subscription_created_at: '2026-09-13T00:00:00Z', subscription_status: 'active',
     } });
     assert.equal(result.planType, label);
     assert.equal(result.subscriptionCreatedAt, Date.parse('2026-09-13T00:00:00Z'));
-    assert.equal(result.subscriptionStatus, 'active');
     assert.equal(result.subscriptionActiveUntil, undefined);
     assert.equal(planInfo(result.planType).tone, 'pro');
   }
@@ -628,6 +627,61 @@ test('上游错误只提取安全错误字段', () => {
 });
 
 const source = readFileSync(new URL('../web/panel-app.mjs', import.meta.url), 'utf8');
+test('Claude 授权期限从凭证读取，随文件变化更新，失败明确报告并重试', async () => {
+  const pollCode = source.slice(source.indexOf('async function pollAccounts('), source.indexOf('async function toggleAccountStatus('));
+  let file = { type: 'claude', auth_index: '1', name: 'claude user.json', email: 'user@example.com', modtime: '2026-11-20T00:00:00Z' };
+  let credential = { refresh_token_expires_at: '2026-12-01T00:00:00Z', access_token: 'private', refresh_token: 'private' };
+  let downloadError;
+  const downloads = [];
+  const state = { accounts: [], polling: false };
+  const context = {
+    state, document: { hidden: false }, elements: { pollState: {} },
+    selectQuotaAccounts, accountProvider: (account) => account.type, formatUTC8DateTime,
+    reconcileActiveQuota() {}, showBanner() {}, render() {},
+    async managementFetch(path) {
+      if (path === '/auth-files') return { files: [{ ...file }, { type: 'codex', auth_index: '2', name: 'codex.json' },
+        { type: 'claude', auth_index: '3', name: 'runtime', runtime_only: true }] };
+      downloads.push(path);
+      if (downloadError) throw downloadError;
+      return credential;
+    },
+  };
+  const poll = () => runInNewContext(pollCode + '\npollAccounts();', context);
+  await poll();
+  assert.deepEqual(downloads, ['/auth-files/download?name=claude%20user.json']);
+  assert.equal(state.accounts[0].refresh_token_expires_at, credential.refresh_token_expires_at);
+  assert.equal(state.accounts[0].access_token, undefined);
+  assert.equal(state.accounts[0].refresh_token, undefined);
+  await poll();
+  assert.equal(downloads.length, 1);
+
+  file.modtime = '2026-11-20T01:00:00Z';
+  credential = { expired: '2026-11-20T08:00:00Z' };
+  await poll();
+  assert.equal(downloads.length, 2);
+  assert.equal(state.accounts[0].refresh_token_expires_at, null);
+  await poll();
+  assert.equal(downloads.length, 2);
+
+  file.modtime = '2026-11-20T02:00:00Z';
+  downloadError = new Error('file not found');
+  await poll();
+  assert.equal(state.accounts[0].authorizationExpiryError, 'file not found');
+  downloadError = undefined;
+  credential = { refresh_token_expires_at: 'invalid' };
+  await poll();
+  assert.equal(state.accounts[0].authorizationExpiryError, '授权过期时间格式无效');
+  credential = { refresh_token_expires_at: '2026-12-02T00:00:00Z' };
+  await poll();
+  assert.equal(state.accounts[0].refresh_token_expires_at, credential.refresh_token_expires_at);
+  assert.equal(state.accounts[0].authorizationExpiryError, undefined);
+
+  file.email = 'other@example.com';
+  credential = {};
+  await poll();
+  assert.equal(state.accounts[0].refresh_token_expires_at, null);
+});
+
 const sessionCode = source.match(/^const SESSION_(?:KEY|PREFIX) = .+;$/gm).join('\n') + '\n' +
   source.slice(source.indexOf('function decodeBase64('), source.indexOf('async function managementFetch('));
 const storedSession = 'enc::v2::GE4aWREGClpDVkMRGUQ1BBEQSwAYGxEXBQFfAlwXHxNPAh0dDgANS0sMBB4EQ0cCVggSGgILDEAVHBszHFRDSktZEhYWWAJfQ16B29iU86pRWE0ABAoAEQEVE34ECxIaHx4BDE4RAQEGEUUPBhcdCxBCD1JTHQo=';

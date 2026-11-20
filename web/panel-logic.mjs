@@ -108,7 +108,6 @@ export function parseClaudeProfile(payload) {
   return {
     planType,
     subscriptionCreatedAt: dateLikeTimestamp(organization.subscription_created_at),
-    subscriptionStatus,
   };
 }
 

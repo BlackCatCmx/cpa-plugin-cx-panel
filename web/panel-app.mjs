@@ -10,6 +10,7 @@ import {
   buildStatusToggleRequest,
   buildRefreshRequest,
   buildResetCreditsRequest,
+  claudeAuthorizationExpiry,
   dateTimeTone,
   formatRelativeDateTime,
   formatReset,
@@ -363,12 +364,11 @@ function renderCard(account) {
     createdItem.append(createElement('span', 'account-meta-label', '套餐开通'),
       createElement('span', 'account-meta-value', formatUTC8DateTime(quota.subscriptionCreatedAt) || '未知'));
     meta.append(createdItem);
-    const expiresAt = account.refresh_token_expires_at;
-    const expiryTone = dateTimeTone(expiresAt);
-    const expiryItem = createElement('span', `account-meta-item account-meta-expiry${expiryTone ? ` expiry-${expiryTone}` : ''}`);
+    const expiry = claudeAuthorizationExpiry(account.refresh_token_expires_at);
+    const expiryItem = createElement('span', `account-meta-item account-meta-expiry${expiry.tone ? ` expiry-${expiry.tone}` : ''}`);
     expiryItem.title = account.authorizationExpiryError || '';
     expiryItem.append(createElement('span', 'account-meta-label', '授权过期'),
-      createElement('span', 'account-meta-value', account.authorizationExpiryError ? '读取失败' : formatUTC8DateTime(expiresAt) || '未记录'));
+      createElement('span', 'account-meta-value', account.authorizationExpiryError ? '读取失败' : expiry.text));
     meta.append(expiryItem);
     if (state.activeQuota.get(key)?.profileError) {
       const item = createElement('span', 'account-meta-item account-meta-failed');

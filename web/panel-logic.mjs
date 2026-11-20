@@ -534,3 +534,14 @@ export function dateTimeTone(value, now = Date.now()) {
   if (remaining <= 0) return 'expired';
   return remaining <= 24 * 60 * 60 * 1000 ? 'soon' : 'valid';
 }
+
+export function claudeAuthorizationExpiry(value, now = Date.now()) {
+  const timestamp = dateLikeTimestamp(value);
+  if (timestamp === null) return { text: '未记录', tone: '' };
+  const remaining = timestamp - now;
+  return {
+    text: remaining <= 0 ? '已到期' : formatUTC8DateTime(timestamp),
+    tone: remaining <= 24 * 60 * 60 * 1000 ? 'expired'
+      : remaining <= 72 * 60 * 60 * 1000 ? 'soon' : 'valid',
+  };
+}

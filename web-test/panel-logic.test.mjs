@@ -11,6 +11,7 @@ import {
   buildStatusToggleRequest,
   buildRefreshRequest,
   buildResetCreditsRequest,
+  claudeAuthorizationExpiry,
   dateTimeTone,
   formatRelativeDateTime,
   formatUTC8DateTime,
@@ -144,6 +145,24 @@ test('套餐到期颜色区分正常、临期和过期', () => {
   assert.equal(dateTimeTone('2026-09-02T00:00:00Z', now), 'soon');
   assert.equal(dateTimeTone('2026-08-31T23:59:59Z', now), 'expired');
   assert.equal(dateTimeTone(null, now), '');
+});
+
+test('Claude 授权在 72 小时内变黄、24 小时内变红并保留日期，到期后显示已到期', () => {
+  const now = Date.parse('2026-11-20T00:00:00Z');
+  const hour = 60 * 60 * 1000;
+  for (const [remaining, tone] of [
+    [72 * hour + 1, 'valid'], [72 * hour, 'soon'],
+    [24 * hour + 1, 'soon'], [24 * hour, 'expired'], [1, 'expired'],
+  ]) {
+    const expiresAt = now + remaining;
+    assert.deepEqual(claudeAuthorizationExpiry(expiresAt, now), {
+      text: formatUTC8DateTime(expiresAt), tone,
+    });
+  }
+  for (const expiresAt of [now, now - 1]) {
+    assert.deepEqual(claudeAuthorizationExpiry(expiresAt, now), { text: '已到期', tone: 'expired' });
+  }
+  assert.deepEqual(claudeAuthorizationExpiry(null, now), { text: '未记录', tone: '' });
 });
 
 test('解析被动额度和动态额度窗口', () => {

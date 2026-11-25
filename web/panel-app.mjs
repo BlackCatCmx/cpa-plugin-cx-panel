@@ -310,9 +310,9 @@ function renderCard(account) {
   if (isClaude) {
     planBadge.type = 'button';
     planBadge.classList.add('plan-refresh');
-    planBadge.title = account.disabled ? '已停用账号不能刷新套餐资料' : '点击刷新套餐资料';
+    planBadge.title = '点击刷新套餐资料';
     planBadge.setAttribute('aria-label', `刷新 ${accountTitle(account)} 的套餐资料`);
-    planBadge.disabled = Boolean(account.disabled) || state.refreshing.has(key) || state.statusUpdating.has(key);
+    planBadge.disabled = state.refreshing.has(key) || state.statusUpdating.has(key);
     planBadge.addEventListener('click', () => refreshClaudeProfile(account));
   }
   identity.append(planBadge);
@@ -339,9 +339,9 @@ function renderCard(account) {
   actions.append(statusButton);
   const refresh = createElement('button', `refresh${state.refreshing.has(key) ? ' loading' : ''}`);
   refresh.type = 'button';
-  refresh.title = account.disabled ? '已停用账号不能刷新额度' : '刷新额度';
+  refresh.title = '刷新额度';
   refresh.setAttribute('aria-label', `刷新 ${accountTitle(account)} 的额度`);
-  refresh.disabled = Boolean(account.disabled) || state.refreshing.has(key) || statusUpdating;
+  refresh.disabled = state.refreshing.has(key) || statusUpdating;
   refresh.append(refreshIcon());
   refresh.addEventListener('click', () => refreshAccount(account));
   actions.append(refresh);

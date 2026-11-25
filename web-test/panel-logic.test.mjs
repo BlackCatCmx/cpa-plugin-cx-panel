@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import * as panelLogic from '../web/panel-logic.mjs';
 import {
   accountPage,
   accountSubscriptionActiveUntil,
@@ -646,6 +647,88 @@ test('上游错误只提取安全错误字段', () => {
 });
 
 const source = readFileSync(new URL('../web/panel-app.mjs', import.meta.url), 'utf8');
+test('停用后保留额度显示，Codex 与 Claude 可继续通过 CPA 刷新，失败保留缓存', async () => {
+  for (const type of ['codex', 'claude']) {
+    let account = { type, auth_index: '1', name: `${type}.json`, email: 'user@example.com' };
+    const quota = parseActiveQuota(type === 'claude'
+      ? { five_hour: { utilization: 20 } }
+      : { rate_limit: { primary_window: { used_percent: 20, limit_window_seconds: 18000 } } }, type);
+    const state = {
+      accounts: [account], activeQuota: new Map([['1', { accountEmail: account.email, quota,
+        profile: { planType: 'Pro' }, profileFetchedAt: Date.now() }]]),
+      activeErrors: new Map(), refreshing: new Set(), profileRefreshing: new Set(), statusUpdating: new Set(),
+      userAgent: 'codex-test', claudeUserAgent: 'claude-cli/2.1.321 (external, cli)', claudeProfileUserAgent: 'claude-code/2.1.321',
+    };
+    const nodes = [];
+    const requests = [];
+    let fail = false;
+    const context = {
+      ...panelLogic, state, ACTIVE_QUOTA_KEY: 'test-quota', localStorage: { setItem() {} }, showBanner() {}, render() {},
+      createElement(tag, className, textContent) {
+        const node = { tag, className, textContent, children: [], style: {}, classList: { add() {} },
+          append(...children) { this.children.push(...children); }, setAttribute() {},
+          addEventListener(event, listener) { this[event] = listener; } };
+        nodes.push(node);
+        return node;
+      },
+      refreshIcon() {}, requestHistoryButton() {},
+      async managementFetch(path, options) {
+        const body = JSON.parse(options.body);
+        requests.push({ path, body });
+        if (path === '/auth-files/status') return { disabled: body.disabled };
+        assert.equal(path, '/api-call');
+        assert.equal(body.auth_index, '1');
+        assert.equal(body.header.Authorization, 'Bearer $TOKEN$');
+        if (fail) throw new Error('upstream unavailable');
+        if (body.url.endsWith('/profile')) return { status_code: 200, body: { account: { has_claude_max: true }, organization: {} } };
+        if (body.url.endsWith('/rate-limit-reset-credits')) return { status_code: 200, body: { credits: [] } };
+        assert.equal(body.header['User-Agent'], type === 'claude' ? state.claudeUserAgent : state.userAgent);
+        return { status_code: 200, body: type === 'claude' ? { five_hour: { utilization: 30 } }
+          : { rate_limit: { primary_window: { used_percent: 30, limit_window_seconds: 18000 } } } };
+      },
+    };
+    const app = runInNewContext(
+      source.slice(source.indexOf('function displayedQuota('), source.indexOf('function render()')) +
+      source.slice(source.indexOf('async function toggleAccountStatus('), source.indexOf('function applyUserAgent(')) +
+      '\n({ renderCard, toggleAccountStatus, reconcileActiveQuota });', context);
+    await app.toggleAccountStatus(account);
+    account = state.accounts[0];
+    assert.equal(account.disabled, true);
+    app.reconcileActiveQuota();
+    const card = app.renderCard(account);
+    assert.match(card.className, /account-disabled/);
+    assert.ok(nodes.some((node) => node.textContent === '80%'));
+    assert.ok(!nodes.some((node) => node.textContent === '暂无额度数据'));
+    const refresh = nodes.find((node) => node.className === 'refresh');
+    assert.equal(refresh.disabled, false);
+    if (type === 'claude') {
+      const profile = nodes.find((node) => node.tag === 'button' && node.className.startsWith('plan '));
+      assert.equal(profile.disabled, false);
+      await profile.click();
+      assert.equal(requests.at(-1).body.header['User-Agent'], state.claudeProfileUserAgent);
+      assert.equal(state.activeQuota.get('1').profile.planType, 'Max');
+    }
+    await refresh.click();
+    const refreshed = state.activeQuota.get('1').quota;
+    assert.equal(refreshed.windows[0].remaining, 70);
+    assert.equal(account.disabled, true);
+    assert.equal(requests.filter((request) => request.path === '/auth-files/status').length, 1);
+    fail = true;
+    await refresh.click();
+    assert.equal(state.activeQuota.get('1').quota, refreshed);
+    assert.match(state.activeErrors.get('1'), /upstream unavailable/);
+    for (const pending of [state.refreshing, state.statusUpdating]) {
+      pending.add('1');
+      nodes.length = 0;
+      state.refreshLog = null;
+      app.renderCard(account);
+      assert.equal(nodes.find((node) => node.className.startsWith('refresh')).disabled, true);
+      if (type === 'claude') assert.equal(nodes.find((node) => node.tag === 'button' && node.className.startsWith('plan ')).disabled, true);
+      pending.delete('1');
+    }
+  }
+});
+
 test('Claude 授权期限从凭证读取，随文件变化更新，失败明确报告并重试', async () => {
   const pollCode = source.slice(source.indexOf('async function pollAccounts('), source.indexOf('async function toggleAccountStatus('));
   let file = { type: 'claude', auth_index: '1', name: 'claude user.json', email: 'user@example.com', modtime: '2026-11-20T00:00:00Z' };
